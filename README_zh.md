@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.2-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.2">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.18.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.18.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -55,12 +55,10 @@
 
 ## 🔥 近期更新
 
+- 2025-03-19 PDF和DOCX中的图支持用多模态大模型去解析得到描述.
 - 2025-02-28 结合互联网搜索（Tavily），对于任意大模型实现类似 Deep Research 的推理功能.
-- 2025-02-05 更新硅基流动的模型列表，增加了对 Deepseek-R1/DeepSeek-V3 的支持。
 - 2025-01-26 优化知识图谱的提取和应用，提供了多种配置选择。
 - 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
-- 2024-12-04 支持知识库的 Pagerank 分数。
-- 2024-11-22 完善了 Agent 中的变量定义和使用。
 - 2024-11-01 对解析后的 chunk 加入关键词抽取和相关问题生成以提高召回的准确度。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 
@@ -151,7 +149,7 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.17.2-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.17.2-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2` 来下载 RAGFlow 镜像的 `v0.17.2` 完整发行版。
+   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.18.0-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.18.0-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` 来下载 RAGFlow 镜像的 `v0.18.0` 完整发行版。
 
    ```bash
    $ cd ragflow/docker
@@ -164,8 +162,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.17.2           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.17.2-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.18.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.18.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -254,7 +252,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
@@ -264,7 +262,7 @@ docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t in
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以源代码启动服务

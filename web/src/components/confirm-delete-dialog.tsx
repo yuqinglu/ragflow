@@ -16,19 +16,28 @@ interface IProps {
   title?: string;
   onOk?: (...args: any[]) => any;
   onCancel?: (...args: any[]) => any;
+  hidden?: boolean;
 }
 
 export function ConfirmDeleteDialog({
   children,
   title,
   onOk,
+  hidden = false,
 }: IProps & PropsWithChildren) {
   const { t } = useTranslation();
+
+  if (hidden) {
+    return children;
+  }
 
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent
+        onSelect={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>
             {title ?? t('common.deleteModalTitle')}

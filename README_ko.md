@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.2-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.2">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.18.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.18.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -55,13 +55,10 @@
 
 ## 🔥 업데이트
 
+- 2025-03-19 PDF 또는 DOCX 파일 내의 이미지를 이해하기 위해 다중 모드 모델을 사용하는 것을 지원합니다.
 - 2025-02-28 인터넷 검색(TAVILY)과 결합되어 모든 LLM에 대한 심층 연구를 지원합니다.
-- 2025-02-05 'SILICONFLOW' 모델 목록을 업데이트하고 Deepseek-R1/DeepSeek-V3에 대한 지원을 추가합니다.
 - 2025-01-26 지식 그래프 추출 및 적용을 최적화하고 다양한 구성 옵션을 제공합니다.
 - 2024-12-18 DeepDoc의 문서 레이아웃 분석 모델 업그레이드.
-- 2024-12-04 지식베이스에 대한 페이지랭크 점수를 지원합니다.
-
-- 2024-11-22 에이전트의 변수 정의 및 사용을 개선했습니다.
 - 2024-11-01 파싱된 청크에 키워드 추출 및 관련 질문 생성을 추가하여 재현율을 향상시킵니다.
 - 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
 
@@ -152,7 +149,7 @@
 > 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
 > ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
 
-   > 아래 명령어는 RAGFlow Docker 이미지의 v0.17.2-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.17.2-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.17.2을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2로 설정합니다.
+   > 아래 명령어는 RAGFlow Docker 이미지의 v0.18.0-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.18.0-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.18.0을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0로 설정합니다.
 
    ```bash
    $ cd ragflow/docker
@@ -165,8 +162,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.17.2           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.17.2-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.18.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.18.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -242,7 +239,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
@@ -252,7 +249,7 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-s
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 소스 코드로 서비스를 시작합니다.

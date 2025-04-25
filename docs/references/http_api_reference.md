@@ -393,7 +393,6 @@ curl --request POST \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
     Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 
@@ -409,10 +408,6 @@ curl --request POST \
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:  
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -440,7 +435,7 @@ Success:
             "html4excel": false,
             "layout_recognize": true,
             "raptor": {
-                "user_raptor": false
+                "use_raptor": false
             }
         },
         "permission": "me",
@@ -573,8 +568,6 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`:One
   - `"email"`: Email
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 
 #### Response
 
@@ -655,7 +648,7 @@ Success:
             "id": "6e211ee0723611efa10a0242ac120007",
             "language": "English",
             "name": "mysql",
-            "chunk_method": "knowledge_graph",
+            "chunk_method": "naive",
             "parser_config": {
                 "chunk_token_num": 8192,
                 "delimiter": "\\n",
@@ -750,7 +743,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "run": "UNSTART",
@@ -841,10 +834,6 @@ curl --request PUT \
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -1339,7 +1328,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
@@ -3169,7 +3158,7 @@ The chat model dynamically determines the number of questions to generate based 
 ##### Request example
 
 ```bash
-curl --request DELETE \
+curl --request POST \
      --url http://{address}/api/v1/conversation/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
