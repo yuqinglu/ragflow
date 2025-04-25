@@ -399,6 +399,7 @@ FAILURE HANDLING:
 
 
 def vision_llm_figure_describe_prompt() -> str:
+    #TODO: 图片视觉分析结果全是英文，对项目不好，项目需要中文
     prompt = """
 You are an expert visual data analyst. Analyze the image and provide a comprehensive description of its content. Focus on identifying the type of visual data representation (e.g., bar chart, pie chart, line graph, table, flowchart), its structure, and any text captions or labels included in the image.
 

@@ -589,6 +589,7 @@ class Knowledgebase(DataBaseModel):
     avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False, index=True)
     name = CharField(max_length=128, null=False, help_text="KB name", index=True)
+    #!注意这里默认语言是英语，如果希望是中文，需要配置LANG的环境变量
     language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
