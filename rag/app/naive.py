@@ -390,6 +390,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             if vision_model:
                 sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
                 callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
+                logging.info(f'Basic parsing, tables is {tables}')
                 try:
                     pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
                     boosted_figures = pdf_vision_parser(callback=callback)
@@ -400,6 +401,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             else:
                 sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
 
+            logging.info(f'sections: {sections}')
+            logging.info(f'tables: {tables}')
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
 

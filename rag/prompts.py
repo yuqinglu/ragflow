@@ -407,6 +407,7 @@ Tasks:
 4. Analyze and explain any trends, comparisons, or patterns shown in the data.
 5. Capture any annotations, captions, or footnotes, and explain their relevance to the image.
 6. Only include details that are explicitly present in the image. If an element (e.g., axis, legend, or caption) does not exist or is not visible, do not mention it.
+7. Text generated MUST be in Chinese
 
 Output format (include only sections relevant to the image content):
 - Visual Type: [Type]
