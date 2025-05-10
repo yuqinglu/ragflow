@@ -291,11 +291,11 @@ def tokenize_chunks_docx(chunks, doc, eng, images):
     return res
 
 
-def tokenize_table(tbls, doc, eng, batch_size=10):
+def tokenize_table(tbls, doc, eng, batch_size=10,table_type="table"):
     res = []
     # add tables
     for (img, rows), poss in tbls:
-        if not rows:
+        if table_type != "table" and not rows:
             continue
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
@@ -305,6 +305,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
                 d["image"] = img
             if poss:
                 add_positions(d, poss)
+            d["table_type"] = table_type
             res.append(d)
             continue
         de = "; " if eng else "； "
@@ -313,6 +314,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             r = de.join(rows[i:i + batch_size])
             tokenize(d, r, eng)
             d["image"] = img
+            d["table_type"] = table_type 
             add_positions(d, poss)
             res.append(d)
     return res
@@ -538,6 +540,13 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
     for sec, pos in sections:
         add_chunk(sec, pos)
 
+    # 新增逻辑：合并最后两个chunk（如果最后一个的token数 < 100）
+    if len(cks) > 1 and tk_nums[-1] < 100:
+        cks[-2] += cks[-1]
+        tk_nums[-2] += tk_nums[-1]
+        cks.pop()
+        tk_nums.pop()
+
     return cks
 
 
@@ -603,6 +612,14 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
     for sec, image in sections:
         add_chunk(sec, image, '')
 
+    # 新增逻辑：合并最后两个chunk（如果最后一个的token数 < 100）
+    if len(cks) > 1 and tk_nums[-1] < 100:
+        cks[-2] += cks[-1]
+        images[-2] = concat_img(images[-2], images[-1])
+        tk_nums[-2] += tk_nums[-1]
+        cks.pop()
+        tk_nums.pop()
+        images.pop()
     return cks, images
 
 

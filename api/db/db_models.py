@@ -796,6 +796,17 @@ class UserCanvasVersion(DataBaseModel):
     class Meta:
         db_table = "user_canvas_version"
 
+class Figure(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    doc_id = CharField(max_length=64, null=False, help_text="doc_id", index=True)
+    file_name = CharField(max_length=255, null=False, help_text="file_name", index=True)
+    content = TextField(null=True, help_text="figure related content")
+    img_id = CharField(max_length=64, null=False, help_text="image_id", index=True)
+    page_num = IntegerField(null=False, help_text="page_num", index=True)
+    metadata = JSONField(null=True, default={})
+
+    class Meta:
+        db_table = "figure"
 
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)

@@ -51,6 +51,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
 from api.db.services.file2document_service import File2DocumentService
+from api.db.services.figure_service import FigureService
 from api import settings
 from api.versions import get_ragflow_version
 from api.db.db_models import close_connection
@@ -252,6 +253,10 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
+            # TODO：这里section_only可以先写死，后面增加配置
+            # cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
+            #                     to_page=task["to_page"], lang=task["language"], callback=progress_callback,
+            #                     kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"], section_only=True))
             cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
                                 to_page=task["to_page"], lang=task["language"], callback=progress_callback,
                                 kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"]))
@@ -271,36 +276,65 @@ async def build_chunks(task, progress_callback):
     if task["pagerank"]:
         doc[PAGERANK_FLD] = int(task["pagerank"])
     el = 0
+    logging.info(f'cks: {cks}')
     for ck in cks:
-        d = copy.deepcopy(doc)
-        d.update(ck)
-        d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        if not d.get("image"):
-            _ = d.pop("image", None)
-            d["img_id"] = ""
+        #进行分类处理，对于chunk进行处理，索引存储，对于图片数据，图片存储到minio中，并把路径源数据到mysql中
+        if ck.pop("table_type", None) == 'figure':
+            #把ck的值存储在mysql中
+            d = copy.deepcopy(doc)
+            d.update(ck)
+            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            if not d.get("image"):
+                continue
+
+            try:
+                output_buffer = BytesIO()
+                if isinstance(d["image"], bytes):
+                    output_buffer = BytesIO(d["image"])
+                else:
+                    d["image"].save(output_buffer, format='JPEG')
+                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+            except Exception:
+                logging.exception(
+                    "Saving figure of task {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
+                raise
+            d["file_name"] = d["docnm_kwd"]
+            d["content"] = d["content_with_weight"]
+            d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+            d["page_num"] = d["page_num_int"][0]
+            logging.info(f'save figure data into myqsl, figure data is {d}')
+            FigureService.insert(**d)
+        else:
+            d = copy.deepcopy(doc)
+            d.update(ck)
+            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.now().timestamp()
+            if not d.get("image"):
+                _ = d.pop("image", None)
+                d["img_id"] = ""
+                docs.append(d)
+                continue
+
+            try:
+                output_buffer = BytesIO()
+                if isinstance(d["image"], bytes):
+                    output_buffer = BytesIO(d["image"])
+                else:
+                    d["image"].save(output_buffer, format='JPEG')
+
+                st = timer()
+                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+                el += timer() - st
+            except Exception:
+                logging.exception(
+                    "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
+                raise
+
+            d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+            logging.info(f'content: {d["content_with_weight"]}, image_id: {d["img_id"]}')
+            del d["image"]
             docs.append(d)
-            continue
-
-        try:
-            output_buffer = BytesIO()
-            if isinstance(d["image"], bytes):
-                output_buffer = BytesIO(d["image"])
-            else:
-                d["image"].save(output_buffer, format='JPEG')
-
-            st = timer()
-            await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-            el += timer() - st
-        except Exception:
-            logging.exception(
-                "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
-            raise
-
-        d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-        del d["image"]
-        docs.append(d)
     logging.info("MINIO PUT({}):{}".format(task["name"], el))
 
     if task["parser_config"].get("auto_keywords", 0):

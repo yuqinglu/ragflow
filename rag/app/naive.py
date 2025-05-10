@@ -345,17 +345,26 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             vision_model = None
 
         sections, tables = Docx()(filename, binary)
-
+        logging.info(f"sections: {sections}")
         if vision_model:
             figures_data = vision_figure_parser_figure_data_wraper(sections)
-            try:
-                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                boosted_figures = docx_vision_parser(callback=callback)
-                tables.extend(boosted_figures)
-            except Exception as e:
-                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
 
+            if kwargs.get("figure_enhanced", False):
+                try:
+                    docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                    boosted_figures = docx_vision_parser(callback=callback)
+                    # 将增强后的图片数据单独保留
+                    figures = boosted_figures
+                except Exception as e:
+                    callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+
+        # 将图片数据加入最终结果
+        #res = tokenize_table(tables, doc, is_english) + tokenize_table(figures_data, doc, is_english, table_type="figure")
+        logging.info(f'tables is {tables}')
         res = tokenize_table(tables, doc, is_english)
+        logging.info(f'figures is {figures_data}')
+        if figures_data:
+            res.extend(tokenize_table(figures_data, doc, is_english, table_type="figure"))
         callback(0.8, "Finish parsing.")
 
         st = timer()
@@ -366,7 +375,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "delimiter", "\n!?。；！？"))
 
         if kwargs.get("section_only", False):
-            return chunks
+            return tokenize_chunks_docx(chunks, doc, is_english, images)
 
         res.extend(tokenize_chunks_docx(chunks, doc, is_english, images))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
@@ -387,23 +396,22 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             except Exception:
                 vision_model = None
 
-            if vision_model:
-                sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
+            sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
+            if vision_model and kwargs.get("figure_enhanced", False):
                 callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
                 logging.info(f'Basic parsing, tables is {tables}')
                 try:
                     pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
                     boosted_figures = pdf_vision_parser(callback=callback)
-                    tables.extend(boosted_figures)
+                    # 将增强后的图片数据单独保留
+                    figures = boosted_figures
                 except Exception as e:
                     callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
                     tables.extend(figures)
-            else:
-                sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
-
             logging.info(f'sections: {sections}')
             logging.info(f'tables: {tables}')
-            res = tokenize_table(tables, doc, is_english)
+            logging.info(f'figures: {figures}')
+            res = tokenize_table(tables, doc, is_english) + tokenize_table(figures, doc, is_english, table_type="figure")
             callback(0.8, "Finish parsing.")
 
         else:
@@ -470,12 +478,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
+    logging.info(f'before naive_merge sections are {sections}')
     chunks = naive_merge(
         sections, int(parser_config.get(
             "chunk_token_num", 128)), parser_config.get(
             "delimiter", "\n!?。；！？"))
+    logging.info(f'after naive_merge chunks are {chunks}')
     if kwargs.get("section_only", False):
-        return chunks
+        return tokenize_chunks(chunks, doc, is_english, pdf_parser)
 
     res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
