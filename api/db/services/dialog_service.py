@@ -390,11 +390,14 @@ def chat(dialog, messages, stream=True, **kwargs):
         if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_generation.end(output=langfuse_output)
 
+        logging.info(f'langfuse output: {langfuse_output}')
+        logging.info(f'reference are {refs}')
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.trace.generation(name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg})
 
+    logging.info(f'prompt+prompt4citation is {prompt+prompt4citation}')
     if stream:
         last_ans = ""
         answer = ""
