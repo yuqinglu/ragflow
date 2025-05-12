@@ -100,8 +100,10 @@ CURRENT_TASKS = {}
 
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
+MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
@@ -275,67 +277,57 @@ async def build_chunks(task, progress_callback):
     }
     if task["pagerank"]:
         doc[PAGERANK_FLD] = int(task["pagerank"])
-    el = 0
-    logging.info(f'cks: {cks}')
-    for ck in cks:
-        #进行分类处理，对于chunk进行处理，索引存储，对于图片数据，图片存储到minio中，并把路径源数据到mysql中
-        if ck.pop("table_type", None) == 'figure':
-            #把ck的值存储在mysql中
-            d = copy.deepcopy(doc)
-            d.update(ck)
-            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-            if not d.get("image"):
-                continue
 
-            try:
+    st = timer()
+
+    async def upload_to_minio(document, chunk):
+        try:
+            async with minio_limiter:
+                d = copy.deepcopy(document)
+                d.update(chunk)
+                d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+                d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+                d["create_timestamp_flt"] = datetime.now().timestamp()
+                if not d.get("image"):
+                    _ = d.pop("image", None)
+                    d["img_id"] = ""
+                    docs.append(d)
+                    return
+
                 output_buffer = BytesIO()
                 if isinstance(d["image"], bytes):
                     output_buffer = BytesIO(d["image"])
                 else:
                     d["image"].save(output_buffer, format='JPEG')
                 await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-            except Exception:
-                logging.exception(
-                    "Saving figure of task {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
-                raise
+
+                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                del d["image"]
+                docs.append(d)
+        except Exception:
+            logging.exception(
+                "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
+            raise
+
+
+    async with trio.open_nursery() as nursery:
+        for ck in cks:
+            nursery.start_soon(upload_to_minio, doc, ck)
+
+    el = timer() - st
+    logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
+
+    figures = []
+    for d in docs:
+        if d.pop("table_type", None) == 'figure':
             d["file_name"] = d["docnm_kwd"]
             d["content"] = d["content_with_weight"]
             d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
             d["page_num"] = d["page_num_int"][0]
-            logging.info(f'save figure data into myqsl, figure data is {d}')
-            FigureService.insert(**d)
-        else:
-            d = copy.deepcopy(doc)
-            d.update(ck)
-            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-            d["create_timestamp_flt"] = datetime.now().timestamp()
-            if not d.get("image"):
-                _ = d.pop("image", None)
-                d["img_id"] = ""
-                docs.append(d)
-                continue
+            figures.append(d)
+    if figures:
+        FigureService.insert_many(figures)
 
-            try:
-                output_buffer = BytesIO()
-                if isinstance(d["image"], bytes):
-                    output_buffer = BytesIO(d["image"])
-                else:
-                    d["image"].save(output_buffer, format='JPEG')
-
-                st = timer()
-                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-                el += timer() - st
-            except Exception:
-                logging.exception(
-                    "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
-                raise
-
-            d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-            logging.info(f'content: {d["content_with_weight"]}, image_id: {d["img_id"]}')
-            del d["image"]
-            docs.append(d)
-    logging.info("MINIO PUT({}):{}".format(task["name"], el))
 
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
@@ -395,7 +387,7 @@ async def build_chunks(task, progress_callback):
 
         docs_to_tag = []
         for d in docs:
-            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S):
+            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
                 docs_to_tag.append(d)
@@ -708,6 +700,8 @@ async def report_status():
                         REDIS_CONN.delete(consumer_name)
         except Exception:
             logging.exception("report_status got exception")
+        finally:
+            redis_lock.release()
         await trio.sleep(30)
 
 
@@ -732,10 +726,13 @@ def recover_pending_tasks():
                             f"time since delivered: {msg['time_since_delivered'] / 1000} s"
                         )
                         REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
-
-            stop_event.wait(60)
         except Exception:
             logging.warning("recover_pending_tasks got exception")
+        finally:
+            redis_lock.release()
+            stop_event.wait(60)
+
+
 
 
 async def main():

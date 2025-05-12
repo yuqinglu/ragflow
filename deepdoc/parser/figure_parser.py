@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import logging
 from PIL import Image
@@ -28,6 +29,7 @@ def vision_figure_parser_figure_data_wraper(figures_data_without_positions):
     ) for figure_data in figures_data_without_positions if isinstance(figure_data[1], Image.Image)]
 
 
+shared_executor = ThreadPoolExecutor(max_workers=10)
 class VisionFigureParser:
     def __init__(self, vision_model, figures_data, *args, **kwargs):
         self.vision_model = vision_model
@@ -51,16 +53,15 @@ class VisionFigureParser:
                 self.figures.append(img_desc[0])
                 self.descriptions.append(img_desc[1])
                 self.positions.append(item[1])
-            elif len(item) == 2 and isinstance(item[1], list) and isinstance(item[1][0], tuple) and len(item[1][0]) == 5:
-                img_desc = item[0]
-                assert len(img_desc) == 2 and isinstance(img_desc[0], Image.Image) and isinstance(img_desc[1], list), "Should be (figure, [description])"
-                self.figures.append(img_desc[0])
-                self.descriptions.append(img_desc[1])
-                self.positions.append([item[1][0]])
             else:
                 assert len(item) == 2 and isinstance(item, tuple) and isinstance(item[1], list), f"get {len(item)=}, {item=}"
-                self.figures.append(item[0])
-                self.descriptions.append(item[1])
+                if isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[0][0], Image.Image) and isinstance(item[0][1], list):
+                    self.figures.append(item[0][0])
+                    self.descriptions.append(item[0][1])
+                else:
+                    self.figures.append(item[0])
+                    self.descriptions.append(item[1])
+
 
     def _assemble(self):
         self.assembled = []
@@ -87,16 +88,21 @@ class VisionFigureParser:
     def __call__(self, **kwargs):
         callback = kwargs.get("callback", lambda prog, msg: None)
 
-        for idx, img_binary in enumerate(self.figures or []):
-            figure_num = idx  # 0-based
-
-            txt = picture_vision_llm_chunk(
-                binary=img_binary,
+        def process(figure_idx, figure_binary):
+            description_text = picture_vision_llm_chunk(
+                binary=figure_binary,
                 vision_model=self.vision_model,
                 prompt=vision_llm_figure_describe_prompt(),
                 callback=callback,
             )
+            return figure_idx, description_text
 
+        futures = []
+        for idx, img_binary in enumerate(self.figures or []):
+            futures.append(shared_executor.submit(process, idx, img_binary))
+
+        for future in as_completed(futures):
+            figure_num, txt = future.result()
             if txt:
                 self.descriptions[figure_num] = txt + "\n".join(self.descriptions[figure_num])
 

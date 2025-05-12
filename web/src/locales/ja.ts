@@ -100,6 +100,7 @@ export default {
       disabled: '無効',
       action: 'アクション',
       parsingStatus: 'パースステータス',
+      parsingStatusTip: 'ドキュメントの解析時間はさまざまな要因によって異なります。Knowledge Graph、RAPTOR、自動質問抽出、自動キーワード抽出などの機能を有効にすると、処理時間が大幅に増加します。進行バーが止まった場合は、次の2つのFAQをご参照ください: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'プロセス開始時刻',
       processDuration: '処理時間',
       progressMsg: '進行状況メッセージ',
@@ -181,7 +182,7 @@ export default {
       chunkTokenNumber: '推奨チャンクサイズ',
       chunkTokenNumberMessage: 'チャンクトークン数は必須です',
       embeddingModelTip:
-        'チャンクを埋め込みに変換するモデルです。一度チャンクが作成されると変更できません。',
+        'ナレッジベースのデフォルトの埋め込みモデルです。ナレッジベースにチャンクが存在する場合、変更することはできません。別のデフォルト埋め込みモデルに切り替えるには、ナレッジベース内のすべての既存チャンクを削除する必要があります。',
       permissionsTip:
         '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
@@ -284,7 +285,7 @@ export default {
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
       useRaptor: 'RAPTORを使用して検索を強化',
       useRaptorTip:
-        'ツリー構造化検索のための再帰的抽象処理（RAPTOR）については、詳細はhttps://huggingface.co/papers/2401.18059をご覧ください',
+        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/dev/enable_raptor をご覧ください。',
       prompt: 'プロンプト',
       promptTip:
         'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
@@ -293,13 +294,13 @@ export default {
       {cluster_content}
 上記が要約する内容です。`,
       maxToken: '最大トークン数',
-      maxTokenTip: '要約のための最大トークン数。',
+      maxTokenTip: '生成された要約チャンクごとの最大トークン数。',
       maxTokenMessage: '最大トークン数は必須です',
       threshold: 'しきい値',
-      thresholdTip: 'しきい値が大きいほどクラスターは少なくなります。',
+      thresholdTip: 'RAPTORでは、チャンクは意味的な類似性によってクラスタリングされます。しきい値パラメータは、チャンクをまとめるために必要な最小限の類似度を設定します。しきい値が高いほど各クラスタ内のチャンク数は少なくなり、しきい値が低いほど多くのチャンクが1つのクラスタに含まれます。',
       thresholdMessage: 'しきい値は必須です',
       maxCluster: '最大クラスター数',
-      maxClusterTip: '最大クラスター数。',
+      maxClusterTip: '作成するクラスタの最大数。',
       maxClusterMessage: '最大クラスター数は必須です',
       randomSeed: 'ランダムシード',
       randomSeedMessage: 'ランダムシードは必須です',
@@ -353,7 +354,7 @@ export default {
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
       knowledgeBases: 'ナレッジベース',
       knowledgeBasesMessage: '選択してください',
-      knowledgeBasesTip: '関連付けるナレッジベースを選択してください。',
+      knowledgeBasesTip: '関連付けるナレッジベースを選択してください。空のナレッジベースはドロップダウンリストに表示されません。',
       system: 'システムプロンプト',
       systemInitialValue: `あなたはインテリジェントなアシスタントです。質問に答えるためにナレッジベースの内容を要約してください。ナレッジベースのデータをリストし、詳細に答えてください。すべてのナレッジベースの内容が質問に関連しない場合、回答には「ナレッジベースにはお探しの回答が見つかりません！」という文を含める必要があります。回答はチャット履歴を考慮する必要があります。
       こちらがナレッジベースです：
@@ -736,7 +737,7 @@ export default {
       news: 'ニュース',
       messageHistoryWindowSize: 'メッセージウィンドウサイズ',
       messageHistoryWindowSizeTip:
-        'LLMが参照する会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大コンテンツ長に注意してください。',
+        'LLMに表示される会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大トークン制限に注意してください。',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
