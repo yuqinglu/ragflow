@@ -19,6 +19,7 @@ import peewee
 
 from api.db.db_models import DB
 from api.utils import current_timestamp, datetime_format, get_uuid
+from api.utils.snowflake import generate_snowflake_id
 
 
 class CommonService:
@@ -154,14 +155,22 @@ class CommonService:
         Returns:
             Model instance: The newly created record object.
         """
-        if "id" not in kwargs:
-            kwargs["id"] = get_uuid()
-        kwargs["create_time"] = current_timestamp()
-        kwargs["create_date"] = datetime_format(datetime.now())
-        kwargs["update_time"] = current_timestamp()
-        kwargs["update_date"] = datetime_format(datetime.now())
-        sample_obj = cls.model(**kwargs).save(force_insert=True)
-        return sample_obj
+        max_retries = 3
+        for attempt in range(max_retries):
+            if "id" not in kwargs:
+                kwargs["id"] = generate_snowflake_id()
+            kwargs["create_time"] = current_timestamp()
+            kwargs["create_date"] = datetime_format(datetime.now())
+            kwargs["update_time"] = current_timestamp()
+            kwargs["update_date"] = datetime_format(datetime.now())
+            try:
+                sample_obj = cls.model(**kwargs).save(force_insert=True)
+                return sample_obj
+            except peewee.IntegrityError as e:
+                if "PRIMARY" in str(e) and attempt < max_retries - 1:
+                    del kwargs["id"]
+                    continue
+                raise
 
     @classmethod
     @DB.connection_context()

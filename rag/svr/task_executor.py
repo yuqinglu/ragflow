@@ -20,6 +20,7 @@ import random
 import sys
 import threading
 import time
+import secrets
 
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import run_graphrag
@@ -285,7 +286,7 @@ async def build_chunks(task, progress_callback):
             async with minio_limiter:
                 d = copy.deepcopy(document)
                 d.update(chunk)
-                d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+                d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest() if chunk["content_with_weight"] else secrets.token_hex(8)
                 d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
                 d["create_timestamp_flt"] = datetime.now().timestamp()
                 if not d.get("image"):
@@ -318,15 +319,17 @@ async def build_chunks(task, progress_callback):
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
 
     figures = []
-    for d in docs:
+
+    for i in reversed(range(len(docs))):
+        d = docs[i]
         if d.pop("table_type", None) == 'figure':
             d["file_name"] = d["docnm_kwd"]
             d["content"] = d["content_with_weight"]
             d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
             d["page_num"] = d["page_num_int"][0]
             figures.append(d)
-    if figures:
-        FigureService.insert_many(figures)
+            del docs[i]
+            FigureService.insert(**d)
 
 
     if task["parser_config"].get("auto_keywords", 0):
