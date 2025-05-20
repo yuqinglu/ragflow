@@ -48,6 +48,15 @@ FACTORY_LLM_INFOS = None
 DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 
+# GraphDB configuration
+GRAPHDB_CONFIG = {
+    'host': os.getenv('GRAPHDB_HOST', 'localhost'),
+    'port': os.getenv('GRAPHDB_PORT', 7200),
+    'repository': os.getenv('GRAPHDB_REPO', 'ragflow'),
+    'user': os.getenv('GRAPHDB_USER', 'admin'),
+    'password': os.getenv('GRAPHDB_PASSWORD', 'admin')
+}
+
 # authentication
 AUTHENTICATION_CONF = None
 
