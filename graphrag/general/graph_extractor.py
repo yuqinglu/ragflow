@@ -66,6 +66,7 @@ class GraphExtractor(Extractor):
         """Init method definition."""
         # TODO: streamline construction
         self._llm = llm_invoker
+        self._language_key = "language"
         self._join_descriptions = join_descriptions
         self._input_text_key = input_text_key or "input_text"
         self._tuple_delimiter_key = tuple_delimiter_key or "tuple_delimiter"
@@ -91,6 +92,7 @@ class GraphExtractor(Extractor):
 
         # Wire defaults into the prompt variables
         self._prompt_variables = {
+            self._language_key: self._language,
             self._tuple_delimiter_key: DEFAULT_TUPLE_DELIMITER,
             self._record_delimiter_key: DEFAULT_RECORD_DELIMITER,
             self._completion_delimiter_key: DEFAULT_COMPLETION_DELIMITER,
