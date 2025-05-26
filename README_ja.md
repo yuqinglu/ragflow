@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.18.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.18.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.19.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.19.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -112,7 +112,10 @@
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlowのコード実行（サンドボックス）機能を利用する場合のみ必要です。
+
+> [!TIP]
+> ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
 ### 🚀 サーバーを起動
 
@@ -149,7 +152,7 @@
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-   > 以下のコマンドは、RAGFlow Docker イメージの v0.18.0-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.18.0-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.18.0 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0 と設定します。
+   > 以下のコマンドは、RAGFlow Docker イメージの v0.19.0-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.19.0-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.19.0 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0 と設定します。
 
    ```bash
    $ cd ragflow/docker
@@ -162,8 +165,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.18.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.18.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.19.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.19.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -280,7 +283,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
@@ -289,7 +292,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. バックエンドサービスを起動する:
+5. オペレーティングシステムにjemallocがない場合は、次のようにインストールします:
+   
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+
+6. バックエンドサービスを起動する:
 
    ```bash
    source .venv/bin/activate
@@ -297,12 +309,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. フロントエンドの依存関係をインストールする:
+7. フロントエンドの依存関係をインストールする:
+
    ```bash
    cd web
    npm install
    ```
-7. フロントエンドサービスを起動する:
+
+8. フロントエンドサービスを起動する:
 
    ```bash
    npm run dev
@@ -311,6 +325,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _以下の画面で、システムが正常に起動したことを示します:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. 開発が完了したら、RAGFlow のフロントエンド サービスとバックエンド サービスを停止します:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 ドキュメンテーション
 
@@ -334,4 +355,4 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 🙌 コントリビュート
 
-RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず [コントリビューションガイド](./CONTRIBUTING.md)をご覧ください。
+RAGFlow はオープンソースのコラボレーションによって発展してきました。この精神に基づき、私たちはコミュニティからの多様なコントリビュートを受け入れています。 参加を希望される方は、まず [コントリビューションガイド](https://ragflow.io/docs/dev/contributing)をご覧ください。

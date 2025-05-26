@@ -22,7 +22,7 @@ from timeit import default_timer as timer
 
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-import markdown
+from markdown import markdown
 from PIL import Image
 from tika import parser
 
@@ -58,6 +58,9 @@ class Docx(DocxParser):
             logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
             return None
         except InvalidImageStreamError:
+            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+            return None
+        except UnicodeDecodeError:
             logging.info("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         try:
@@ -296,13 +299,13 @@ class Markdown(MarkdownParser):
             text = sections[0]
         else:
             return []
-
+        
         from bs4 import BeautifulSoup
-        md = markdown.Markdown()
-        html_content = md.convert(text)
+        html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
         html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
         return html_images
+
 
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
@@ -344,7 +347,6 @@ class Markdown(MarkdownParser):
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
                     sections.append((sec, ""))
-
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls

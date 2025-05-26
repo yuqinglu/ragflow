@@ -22,7 +22,7 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.18.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.18.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.19.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.19.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
@@ -132,7 +132,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 - RAM >= 16 GB
 - Disco >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário apenas se você pretende usar o recurso de executor de código (sandbox) do RAGFlow.
+
+> [!TIP]
+> Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Iniciar o servidor
 
@@ -169,7 +172,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 > Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
 > Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
 
-    > O comando abaixo baixa a edição `v0.18.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.18.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` para a edição completa `v0.18.0`.
+    > O comando abaixo baixa a edição `v0.19.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.19.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0` para a edição completa `v0.19.0`.
 
     ```bash
     $ cd ragflow/docker
@@ -182,8 +185,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
     | --------------------- | ---------------------- | ------------------------------- | ------------------------ |
-    | v0.18.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
-    | v0.18.0-slim          | ~2                     | ❌                              | Lançamento estável       |
+    | v0.19.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
+    | v0.19.0-slim          | ~2                     | ❌                              | Lançamento estável       |
     | nightly               | ~9                     | :heavy_check_mark:              | _Instável_ build noturno |
     | nightly-slim          | ~2                     | ❌                               | _Instável_ build noturno |
 
@@ -303,7 +306,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Adicione a seguinte linha ao arquivo `/etc/hosts` para resolver todos os hosts especificados em **docker/.env** para `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. Se não conseguir acessar o HuggingFace, defina a variável de ambiente `HF_ENDPOINT` para usar um site espelho:
@@ -312,7 +315,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Lance o serviço de back-end:
+5. Se o seu sistema operacional não tiver jemalloc, instale-o da seguinte maneira:
+
+    ```bash
+    # ubuntu
+    sudo apt-get install libjemalloc-dev
+    # centos
+    sudo yum instalar jemalloc
+    ```
+
+6. Lance o serviço de back-end:
 
    ```bash
    source .venv/bin/activate
@@ -320,14 +332,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Instale as dependências do front-end:
+7. Instale as dependências do front-end:
 
    ```bash
    cd web
    npm install
    ```
 
-7. Lance o serviço de front-end:
+8. Lance o serviço de front-end:
 
    ```bash
    npm run dev
@@ -336,6 +348,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Pare os serviços de front-end e back-end do RAGFlow após a conclusão do desenvolvimento:
+
+    ```bash
+    pkill -f "ragflow_server.py|task_executor.py"
+    ```
+
 
 ## 📚 Documentação
 
@@ -360,4 +379,4 @@ Veja o [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 ## 🙌 Contribuindo
 
 O RAGFlow prospera por meio da colaboração de código aberto. Com esse espírito, abraçamos contribuições diversas da comunidade.
-Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](./CONTRIBUTING.md).
+Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](https://ragflow.io/docs/dev/contributing).

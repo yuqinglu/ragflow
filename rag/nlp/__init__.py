@@ -302,6 +302,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10,table_type="table"):
             d["content_with_weight"] = rows
             if img:
                 d["image"] = img
+                d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             d["table_type"] = table_type
@@ -312,8 +313,10 @@ def tokenize_table(tbls, doc, eng, batch_size=10,table_type="table"):
             d = copy.deepcopy(doc)
             r = de.join(rows[i:i + batch_size])
             tokenize(d, r, eng)
-            d["image"] = img
-            d["table_type"] = table_type
+            if img:
+                d["image"] = img
+                d["doc_type_kwd"] = "image"
+                d["table_type"] = table_type
             add_positions(d, poss)
             res.append(d)
     return res
@@ -547,6 +550,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         tk_nums.pop()
 
     return cks
+    
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
     if not texts or len(texts) != len(images):
