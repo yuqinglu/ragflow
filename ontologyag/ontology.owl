@@ -23,7 +23,25 @@
     <owl:Class rdf:about="#MaintenanceStrategy"/> <!-- 维护策略 -->
     <owl:Class rdf:about="#PerformanceIndicator"/> <!-- 性能指标 -->
     <owl:Class rdf:about="#MeteorologicalCondition"/> <!-- 气象条件 -->
-    <owl:Class rdf:about="#SafetyStandard"/> <!-- 安全规范 -->
+    <owl:Class rdf:about="# ">
+        <rdfs:subClassOf rdf:resource="#SafetyStandard"/>
+        <owl:equivalentClass>
+            <owl:Class>
+                <owl:unionOf rdf:parseType="Collection">
+                    <owl:Class rdf:about="#SafetyViolation"/>
+                </owl:unionOf>
+            </owl:Class>
+        </owl:equivalentClass>
+    </owl:Class>
+    
+    <owl:Class rdf:about="#SafetyViolation">
+        <rdfs:subClassOf rdf:resource="#SafetyStandard"/>
+    </owl:Class>
+    
+    <owl:DatatypeProperty rdf:about="#hasViolationType">
+        <rdfs:domain rdf:resource="#SafetyViolation"/>
+        <rdfs:range rdf:resource="&xsd;string"/>
+    </owl:DatatypeProperty>
     <owl:Class rdf:about="#TechnicalParameter"/> <!-- 技术参数 -->
     <owl:Class rdf:about="#CostInformation"/> <!-- 成本信息 -->
 
@@ -61,6 +79,20 @@
         <rdfs:range rdf:resource="&xsd;string"/>
     </owl:DatatypeProperty>
 
+    <!-- 维修要素类 -->
+    <owl:Class rdf:about="#RepairTool"/>
+    <owl:Class rdf:about="#RepairStep"/>
+
+    <!-- 维修要素属性 -->
+    <owl:DatatypeProperty rdf:about="#toolName">
+        <rdfs:domain rdf:resource="#RepairTool"/>
+        <rdfs:range rdf:resource="&xsd;string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#stepDescription">
+        <rdfs:domain rdf:resource="#RepairStep"/>
+        <rdfs:range rdf:resource="&xsd;string"/>
+    </owl:DatatypeProperty>
+
     <!-- 定义关系 -->
     <owl:ObjectProperty rdf:about="#isLocatedIn"> <!-- 设备位于某个地点 -->
         <rdfs:domain rdf:resource="#Equipment"/>
@@ -73,6 +105,14 @@
     <owl:ObjectProperty rdf:about="#causes"> <!-- 故障类型导致某个事件 -->
         <rdfs:domain rdf:resource="#FaultType"/>
         <rdfs:range rdf:resource="#Event"/>
+    </owl:ObjectProperty>
+    <owl:ObjectProperty rdf:about="#requiresTool">
+        <rdfs:domain rdf:resource="#FaultType"/>
+        <rdfs:range rdf:resource="#RepairTool"/>
+    </owl:ObjectProperty>
+    <owl:ObjectProperty rdf:about="#requiresStep">
+        <rdfs:domain rdf:resource="#FaultType"/>
+        <rdfs:range rdf:resource="#RepairStep"/>
     </owl:ObjectProperty>
     <owl:ObjectProperty rdf:about="#requires"> <!-- 故障类型需要某种维护策略 -->
         <rdfs:domain rdf:resource="#FaultType"/>
@@ -89,6 +129,10 @@
     <owl:ObjectProperty rdf:about="#isRelatedTo">
         <rdfs:domain rdf:resource="#CostInformation"/>
         <rdfs:range rdf:resource="#MaintenanceStrategy"/>
+    </owl:ObjectProperty>
+    <owl:ObjectProperty rdf:about="#hasRepairProcedure">
+        <rdfs:domain rdf:resource="#Equipment"/>
+        <rdfs:range rdf:resource="#RepairStep"/>
     </owl:ObjectProperty>
     <owl:ObjectProperty rdf:about="#isParameterOf">
         <rdfs:domain rdf:resource="#TechnicalParameter"/>
@@ -138,9 +182,14 @@
     
     <!-- 新增安全穿戴检查 -->
     <owl:DatatypeProperty rdf:about="#hasCheckParameter">
-        <rdfs:domain rdf:resource="#SafetyGear"/>
+        <rdfs:domain rdf:resource="#InspectionProcedure"/>
         <rdfs:range rdf:resource="&xsd;string"/>
     </owl:DatatypeProperty>
+    
+    <owl:ObjectProperty rdf:about="#checksSafetyGear">
+        <rdfs:domain rdf:resource="#InspectionProcedure"/>
+        <rdfs:range rdf:resource="#SafetyGear"/>
+    </owl:ObjectProperty>
     
     <!-- 新增巡检相关属性 -->
     <owl:DatatypeProperty rdf:about="#hasFrequency">

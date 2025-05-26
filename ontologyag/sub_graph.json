@@ -1,0 +1,43 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "课包_安全",
+        "type": "course",
+        "label": "课包",
+        "properties": {
+          "difficultyLevel": "简单",
+          "courseDescription": "这是关于安全的课包",
+          "cover_url": "cover/safety/cover1.jpg"
+        }
+      },
+      {
+        "id": "微课_安全帽",
+        "type": "course",
+        "label": "微课",
+        "properties": {
+          "difficultyLevel": "简单",
+          "courseDescription": "安全帽知识详解，讲解安全帽的原理、佩戴要求以及维护保养",
+          "cover_url": "cover/safety/cover1.jpg",
+          "video_url": "video/safetyHelmet/video.mp4"
+        }
+      },
+      {
+        "id": "安全帽",
+        "type": "safetyHelmet"
+      }
+    ],
+    "edges": [
+      {
+        "source": "课包_安全",
+        "target": "微课_安全帽",
+        "type": "hasSubcourse"
+      },
+      {
+        "source": "微课_安全帽",
+        "target": "安全帽",
+        "type": "coversKnowledge"
+      }
+    ]
+  }
+}

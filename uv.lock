@@ -4918,7 +4918,6 @@ dependencies = [
     { name = "werkzeug" },
     { name = "wikipedia" },
     { name = "word2number" },
-    { name = "xgboost" },
     { name = "xpinyin" },
     { name = "xxhash" },
     { name = "yfinance" },
@@ -5057,7 +5056,6 @@ requires-dist = [
     { name = "werkzeug", specifier = "==3.0.6" },
     { name = "wikipedia", specifier = "==1.4.0" },
     { name = "word2number", specifier = "==1.1" },
-    { name = "xgboost", specifier = "==1.5.0" },
     { name = "xpinyin", specifier = "==0.7.6" },
     { name = "xxhash", specifier = ">=3.5.0,<4.0.0" },
     { name = "yfinance", specifier = "==0.1.96" },
@@ -6565,22 +6563,6 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c9/4a/44d3c295350d776427904d73c189e10aeae66d7f555bb2feee16d1e4ba5a/wsproto-1.2.0.tar.gz", hash = "sha256:ad565f26ecb92588a3e43bc3d96164de84cd9902482b130d0ddbaa9664a85065" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/78/58/e860788190eba3bcce367f74d29c4675466ce8dddfba85f7827588416f01/wsproto-1.2.0-py3-none-any.whl", hash = "sha256:b9acddd652b585d75b20477888c56642fdade28bdfd3579aa24a4d2c037dd736" },
-]
-
-[[package]]
-name = "xgboost"
-version = "1.5.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "scipy" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/15/70/7308768fdd4a35477efb01098ffd426e455b600837ed0dd70c3293cd3e03/xgboost-1.5.0.tar.gz", hash = "sha256:6b7c34a18474c1b73b5c6dcf1231f5fe102d6f26490a65465e3879048bf1f3d4" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/9e/0d/376d5491ba5f06c6224304d572e1131521115d423a6c6dc347e85129c55c/xgboost-1.5.0-py3-none-macosx_10_14_x86_64.macosx_10_15_x86_64.macosx_11_0_x86_64.whl", hash = "sha256:ae122406c2c1d2a407c18a49c2a05f9bbbaa3249fd39e91c11cb223d538dba4e" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/dd/e2/43d1d96344d8733bbebde084bbf95ef8f2a3aab9f8d3779c3ee381754514/xgboost-1.5.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:ebe36ee21516a37f645bcd1f3ca1247485fe77d96f1c3d605f970c469b6a9015" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/a7/c9/4968ca0434c313aed71fc4cc2339aa8844482d5eefdcc8989c985a19ea2e/xgboost-1.5.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:edaad84317a53671069b4477152915c25b4121d997bfa531711f0a18ba1402fe" },
-    { url = "https://mirrors.aliyun.com/pypi/packages/a2/8a/dbfcab37ea93951fa85e5746de0fc7378b2a4c99a32ddad36a7fb504ed57/xgboost-1.5.0-py3-none-win_amd64.whl", hash = "sha256:9502a9ed5c52669c83207380eeaaa3862cbf38b271040c6d5226914e07cf196c" },
 ]
 
 [[package]]
