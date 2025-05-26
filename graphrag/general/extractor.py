@@ -98,7 +98,7 @@ class Extractor:
             for i, ck in enumerate(chunks):
                 ck = truncate(ck, int(self._llm.max_length*0.8))
                 nursery.start_soon(self._process_single_content, (doc_id, ck), i, len(chunks), out_results)
-
+        logging.info(f"after process_sinage_content the result is {out_results}")
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
         sum_token_count = 0
@@ -109,6 +109,8 @@ class Extractor:
                 maybe_edges[tuple(sorted(k))].extend(v)
             sum_token_count += token_count
         now = trio.current_time()
+        logging.info(f"Entities extraction done, entites are {maybe_nodes}")
+        logging.info(f"Relationships extraction done, relations are {maybe_edges}")
         if callback:
             callback(msg = f"Entities and relationships extraction done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {sum_token_count} tokens, {now-start_ts:.2f}s.")
         start_ts = now
@@ -118,6 +120,8 @@ class Extractor:
             for en_nm, ents in maybe_nodes.items():
                 nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data)
         now = trio.current_time()
+        logging.info(f"Entites merging done, cost time is {now-start_ts}s")
+        logging.info(f"Entites mergeing done, all entities are {all_entities_data} ")
         if callback:
             callback(msg = f"Entities merging done, {now-start_ts:.2f}s.")
 
@@ -128,6 +132,8 @@ class Extractor:
             for (src, tgt), rels in maybe_edges.items():
                 nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
         now = trio.current_time()
+        logging.info("Relationships merging done, cost time is {now-start_ts}s")
+        logging.info(f"Relationships mergeing done, all relationships are {all_relationships_data} ")
         if callback:
             callback(msg = f"Relationships merging done, {now-start_ts:.2f}s.")
 

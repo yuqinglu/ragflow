@@ -303,6 +303,7 @@ class InfinityConnection(DocStoreConnection):
         """
         TODO: Infinity doesn't provide highlight
         """
+        logging.info(f"selectFields: {selectFields}\n hightlightFields: {highlightFields}\n condition: {condition}\n matchExprs: {matchExprs}\n orderBy: {orderBy}\n offset: {offset}\n limit: {limit}\n indexNames: {indexNames}\n knowledgebaseIds: {knowledgebaseIds}\n aggFields: {aggFields}\n rank_feature: {rank_feature}")
         if isinstance(indexNames, str):
             indexNames = indexNames.split(",")
         assert isinstance(indexNames, list) and len(indexNames) > 0

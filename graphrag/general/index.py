@@ -54,7 +54,7 @@ async def run_graphrag(
         doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"]
     ):
         chunks.append(d["content_with_weight"])
-
+    logging.info(f"language is {language}")
     subgraph = await generate_subgraph(
         LightKGExt
         if row["kb_parser_config"]["graphrag"]["method"] != "general"
@@ -78,6 +78,7 @@ async def run_graphrag(
 
     try:
         subgraph_nodes = set(subgraph.nodes())
+        logging.info("start merge subgraph")
         new_graph = await merge_subgraph(
             tenant_id,
             kb_id,

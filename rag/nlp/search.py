@@ -83,7 +83,7 @@ class Dealer:
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                       "question_kwd", "question_tks",
+                       "question_kwd", "question_tks", "create_time",
                        "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
@@ -415,6 +415,8 @@ class Dealer:
                 "term_similarity": tsim[i],
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
+                "page_num_int": chunk["page_num_int"],
+                "create_time": chunk["create_time"]
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
@@ -431,7 +433,6 @@ class Dealer:
                                                        v in sorted(ranks["doc_aggs"].items(),
                                                                    key=lambda x: x[1]["count"] * -1)]
         ranks["chunks"] = ranks["chunks"][:page_size]
-
         return ranks
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
