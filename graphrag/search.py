@@ -320,7 +320,6 @@ class KGSearch(Dealer):
                             max_token: int = 8196,
                             ent_topn: int = 6,
                             rel_topn: int = 6,
-                            comm_topn: int = 1,
                             ent_sim_threshold: float = 0.3,
                             rel_sim_threshold: float = 0.3,
                             **kwargs
