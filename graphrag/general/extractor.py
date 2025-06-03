@@ -17,16 +17,19 @@ import logging
 import re
 from collections import defaultdict, Counter
 from copy import deepcopy
-from typing import Callable
+from typing import Callable, Dict, Any, Tuple, List
 import trio
 import networkx as nx
+import json
 
+from api.db.db_models import Document
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
     handle_single_relationship_extraction, split_string_by_multi_markers, flat_uniq_list, chat_limiter, get_from_to, GraphChange
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.prompts import message_fit_in
 from rag.utils import truncate
+from api.db.services.document_service import DocumentService
 
 GRAPH_FIELD_SEP = "<SEP>"
 DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]
@@ -39,12 +42,13 @@ class Extractor:
     def __init__(
         self,
         llm_invoker: CompletionLLM,
-        language: str | None = "English",
+        language: str | None = "Chinese",
         entity_types: list[str] | None = None,
     ):
         self._llm = llm_invoker
         self._language = language
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
+        self.callback = None
 
     def _chat(self, system, history, gen_conf):
         hist = deepcopy(history)
@@ -86,14 +90,144 @@ class Extractor:
                 )
         return dict(maybe_nodes), dict(maybe_edges)
 
+    async def _process_micro_course(self, doc: Document, chunks: list[str]) -> Tuple[List[Dict], List[Dict]]:
+        """处理微课课件文档
+        
+        Args:
+            doc: 文档信息
+            
+        Returns:
+            Tuple[List[Dict], List[Dict]]: 实体列表和关系列表
+        """
+        # 从元数据中获取微课、课程、课包信息
+        logging.info("开始进行微课的知识抽取")
+        logging.info(f"meta_fields is {doc.meta_fields}")
+        metadata = doc.meta_fields
+        micro_course_id = metadata.get('micro_course_id')
+        course_id = metadata.get('course_id')
+        package_id = metadata.get('package_id')
+        micro_course_name = metadata.get('micro_course_name')
+        micro_course_desc = metadata.get('micro_course_desc')
+        course_name = metadata.get('course_name')
+        package_name = metadata.get('package_name')
+
+        doc_id = doc.id
+        
+        if not all([micro_course_id, course_id, package_id]):
+            return [], []
+            
+        # 1. 创建微课、课程、课包实体
+        micro_course_entity = {
+            'micro_course_id': micro_course_id,
+            'entity_type': 'MICROCOURSE',
+            'description': micro_course_desc,
+            'entity_name': f'微课_{micro_course_name}',
+            'source_id': [doc_id]
+        }
+        
+        course_entity = {
+            'course_id': course_id,
+            'entity_type': 'COURSE',
+            'description': '课程',
+            'entity_name': f'课程_{course_name}',
+            'source_id': [doc_id]
+        }
+        
+        package_entity = {
+            'package_id': package_id,
+            'entity_type': 'COURSEPACKAGE',
+            'description': '课包',
+            'entity_name': f'课包_{package_name}',
+            'source_id': [doc_id]
+        }
+        
+        # 2. 创建实体间的关系
+        micro_course_to_course = {
+            'src_id': f'微课_{micro_course_name}',
+            'tgt_id': f'课程_{course_name}',
+            'description': f'微课_{micro_course_name}属于课程_{course_name}中',
+            'source_id': [doc_id],
+            'weight': 5.0
+        }
+        
+        course_to_package = {
+            'src_id': f'课程_{course_name}',
+            'tgt_id': f'课包_{package_name}',
+            'description': f'课程_{course_name}属于课包_{package_name}中',
+            'source_id': [doc_id],
+            'weight': 5.0
+        }
+        
+        # 3. 对微课内容进行常规的知识图谱抽取
+        out_results = []
+        
+        # 使用现有的抽取逻辑处理每个chunk
+        async with trio.open_nursery() as nursery:
+            for i, chunk in enumerate(chunks):
+                content = truncate(chunk, int(self._llm.max_length*0.8))
+                nursery.start_soon(self._process_single_content, (doc_id, content), i, len(chunks), out_results)
+        
+        # 合并抽取的实体和关系
+        maybe_nodes = defaultdict(list)
+        maybe_edges = defaultdict(list)
+        sum_token_count = 0
+        for m_nodes, m_edges, token_count in out_results:
+            for k, v in m_nodes.items():
+                maybe_nodes[k].extend(v)
+            for k, v in m_edges.items():
+                maybe_edges[tuple(sorted(k))].extend(v)
+            sum_token_count += token_count
+            
+        # 合并实体
+        all_entities_data = []
+        async with trio.open_nursery() as nursery:
+            for en_nm, ents in maybe_nodes.items():
+                nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data)
+                
+        # 合并关系
+        all_relationships_data = []
+        async with trio.open_nursery() as nursery:
+            for (src, tgt), rels in maybe_edges.items():
+                nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
+        
+        # 4. 建立微课与知识点实体的关联
+        for entity in all_entities_data:
+            # 为每个知识点实体创建与微课的关联关系
+            knowledge_relation = {
+                'src_id': f'微课_{micro_course_name}',
+                'tgt_id': entity['entity_name'],
+                'description': f"微课_{micro_course_name}讲解{entity['entity_name']}相关知识点",
+                'source_id': [doc_id],
+                'weight': 8.0
+            }
+            all_relationships_data.append(knowledge_relation)
+        
+        # 5. 合并所有实体和关系
+        all_entities = [micro_course_entity, course_entity, package_entity] + all_entities_data
+        all_relations = [micro_course_to_course, course_to_package] + all_relationships_data
+        
+        return all_entities, all_relations
+
+
     async def __call__(
         self, doc_id: str, chunks: list[str],
             callback: Callable | None = None
     ):
-
         self.callback = callback
         start_ts = trio.current_time()
         out_results = []
+        
+        # 获取文档元数据
+        _, doc = DocumentService.get_by_id(doc_id)
+        logging.info(f" doc_id: {doc_id}, doc is {doc.id}, {doc.parser_id}, {doc.meta_fields}, {doc.kb_id}")
+        metadata = doc.meta_fields
+        logging.info(f"metadata: {metadata}")
+        # 如果是微课课件，使用特定的处理逻辑
+        if DocumentService.is_micro_course(metadata):
+            all_entities, all_relations = await self._process_micro_course(doc, chunks)
+            return all_entities, all_relations
+        
+        # 否则使用原有的处理逻辑
         async with trio.open_nursery() as nursery:
             for i, ck in enumerate(chunks):
                 ck = truncate(ck, int(self._llm.max_length*0.8))
@@ -120,7 +254,7 @@ class Extractor:
             for en_nm, ents in maybe_nodes.items():
                 nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data)
         now = trio.current_time()
-        logging.info(f"Entites merging done, cost time is {now-start_ts}s")
+        logging.info(f"Entites merging done, cost time is {now - start_ts}s")
         logging.info(f"Entites mergeing done, all entities are {all_entities_data} ")
         if callback:
             callback(msg = f"Entities merging done, {now-start_ts:.2f}s.")
@@ -132,8 +266,8 @@ class Extractor:
             for (src, tgt), rels in maybe_edges.items():
                 nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
         now = trio.current_time()
-        logging.info("Relationships merging done, cost time is {now-start_ts}s")
-        logging.info(f"Relationships mergeing done, all relationships are {all_relationships_data} ")
+        logging.info(f"Relationships merging done, cost time is {now - start_ts}s")
+        logging.info(f"Relationships merging done, all relationships are {all_relationships_data} ")
         if callback:
             callback(msg = f"Relationships merging done, {now-start_ts:.2f}s.")
 

@@ -515,6 +515,26 @@ class DocumentService(CommonService):
             pass
         return False
 
+    @classmethod
+    def is_micro_course(cls, doc_metadata):
+        """
+        检测文档是否为微课课件
+        通过检查文档元数据中的特定字段来判断
+        """
+        # 检查是否存在微课相关的元数据字段
+        return doc_metadata.get("is_micro_course", False)
+
+    @classmethod
+    def detect_document_type(cls, metadata):
+        """检测文档类型"""
+        if not metadata:
+            return None
+            
+        if metadata.get('is_micro_course'):
+            return ParserType.MicroCourse
+            
+        return None
+
 
 def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     chunking_config = DocumentService.get_chunking_config(doc["id"])

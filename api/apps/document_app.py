@@ -45,13 +45,14 @@ from api.utils.web_utils import html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
 from rag.utils.storage_factory import STORAGE_IMPL
-
+import logging
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
 def upload():
     kb_id = request.form.get("kb_id")
+    logging.info(f"Form data: {request.form}")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
     if "file" not in request.files:
@@ -65,7 +66,27 @@ def upload():
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
         raise LookupError("Can't find this knowledgebase!")
-    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+    
+    # 获取文档元数据
+    doc_metadata = request.form.get('metadata', '{}')
+    try:
+        doc_metadata = json.loads(doc_metadata)
+    except:
+        doc_metadata = {}
+    logging.info(f"调用upload上传接口，上传的metadata为: {doc_metadata}")
+    # 检测文档类型
+    doc_type = DocumentService.detect_document_type(doc_metadata)
+    # if doc_type == ParserType.MicroCourse:
+    #
+    #     # 强制使用 one 切片方法
+    #     doc_metadata['parser_id'] = ParserType.ONE.value
+        # doc_metadata['parser_config'] = {
+        #     'use_graphrag': True,  # 启用知识图谱
+        #     # 这里最好是把原来的entity中，新增这些type而不是直接替换
+        #     'entity_types': ['micro_course', 'course', 'package', 'knowledge_point']  # 添加相关实体类型
+        # }
+    
+    err, files = FileService.upload_document(kb, file_objs, current_user.id, doc_metadata)
 
     if not files:
         return get_json_result(data=files, message="There seems to be an issue with your file format. Please verify it is correct and not corrupted.", code=settings.RetCode.DATA_ERROR)

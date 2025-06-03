@@ -84,11 +84,12 @@ class KGSearch(Dealer):
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
+            content_with_weight = ent.get("content_with_weight", "{}")
             res[ent["entity_kwd"]] = {
                 "sim": get_float(ent.get("_score", 0)) + get_float(ent.get("SIMILARITY", 0)) + get_float(ent.get("SCORE", 0)),
-                "pagerank": get_float(ent.get("rank_flt", 0)),
+                "pagerank": get_float(json.loads(content_with_weight).get("pagerank", 0)),
                 "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
-                "description": ent.get("content_with_weight", "{}")
+                "description": content_with_weight
             }
         return res
 
@@ -318,8 +319,8 @@ class KGSearch(Dealer):
                             emb_mdl,
                             llm,
                             max_token: int = 8196,
-                            ent_topn: int = 6,
-                            rel_topn: int = 6,
+                            ent_topn: int = 8,
+                            rel_topn: int = 8,
                             ent_sim_threshold: float = 0.3,
                             rel_sim_threshold: float = 0.3,
                             **kwargs
@@ -362,8 +363,7 @@ class KGSearch(Dealer):
                     nhop_pathes[(f, t)]["pagerank"] = wts[i]
 
         logging.info(f"Retrieved entities are {ents_from_query}")
-        logging.info("Retrieved entities: {}".format(list(ents_from_query.keys())))
-        logging.info("Retrieved relations: {}".format(list(rels_from_txt.keys())))
+        logging.info(f"Retrieved relations: {rels_from_txt}")
         logging.info("Retrieved entities from types({}): {}".format(ty_kwds, list(ents_from_types.keys())))
         logging.info("Retrieved N-hops: {}".format(list(nhop_pathes.keys())))
 
@@ -404,10 +404,11 @@ class KGSearch(Dealer):
 
         ents = []
         relas = []
+        logging.info(f"ents_from_query after sorted: {ents_from_query}")
         for n, ent in ents_from_query:
             ents.append({
                 "Entity": n,
-                "Score": "%.2f" % (ent["sim"] * ent["pagerank"]),
+                "Score": "%.4f" % (ent["sim"] * ent["pagerank"]),
                 "Description": json.loads(ent["description"]).get("description", "") if ent["description"] else ""
             })
             max_token -= num_tokens_from_string(str(ents[-1]))

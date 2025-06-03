@@ -254,6 +254,12 @@ export const useUploadNextDocument = () => {
         formData.append('file', file);
       });
 
+      // 从 fileList 中获取 metadata
+      const metadata = fileList[0]?.metadata;
+      if (metadata) {
+        formData.append('metadata', metadata);
+      }
+
       try {
         const ret = await kbService.document_upload(formData);
         const code = get(ret, 'data.code');

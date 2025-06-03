@@ -153,9 +153,11 @@ export const useHandleUploadDocument = () => {
     async ({
       parseOnCreation,
       directoryFileList,
+      metadata,
     }: {
       directoryFileList: UploadFile[];
       parseOnCreation: boolean;
+      metadata?: any;
     }): Promise<number | undefined> => {
       const processFileGroup = async (filesPart: UploadFile[]) => {
         // set status to uploading on files
@@ -168,6 +170,10 @@ export const useHandleUploadDocument = () => {
             let newFile = file;
             newFile.status = 'uploading';
             newFile.percent = 1;
+            // 添加 metadata 到文件对象
+            if (metadata) {
+              newFile.metadata = metadata;
+            }
             return newFile;
           }),
         );

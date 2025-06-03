@@ -12,6 +12,8 @@ import {
   Upload,
   UploadFile,
   UploadProps,
+  Form,
+  Input,
 } from 'antd';
 import { Dispatch, SetStateAction, useState } from 'react';
 
@@ -91,8 +93,10 @@ const FileUploadModal = ({
   const { t } = useTranslate('fileManager');
   const [value, setValue] = useState<string | number>('local');
   const [parseOnCreation, setParseOnCreation] = useState(false);
+  const [isMicroCourse, setIsMicroCourse] = useState(false);
   const [currentFileList, setCurrentFileList] = useState<UploadFile[]>([]);
   const [directoryFileList, setDirectoryFileList] = useState<UploadFile[]>([]);
+  const [form] = Form.useForm();
 
   const clearFileList = () => {
     if (setFileList) {
@@ -102,6 +106,8 @@ const FileUploadModal = ({
       setCurrentFileList([]);
     }
     setDirectoryFileList([]);
+    form.resetFields();
+    setIsMicroCourse(false);
   };
 
   const onOk = async () => {
@@ -110,9 +116,25 @@ const FileUploadModal = ({
       return;
     }
 
+    const formValues = await form.validateFields();
+    const metadata = isMicroCourse ? {
+      is_micro_course: true,
+      micro_course_id: formValues.micro_course_id,
+      micro_course_name: formValues.micro_course_name,
+      micro_course_desc: formValues.micro_course_desc,
+      course_id: formValues.course_id,
+      course_name: formValues.course_name,
+      package_id: formValues.package_id,
+      package_name: formValues.package_name,
+    } : {};
+
     const ret = await onFileUploadOk?.(
       fileList
-        ? { parseOnCreation, directoryFileList }
+        ? { 
+            parseOnCreation, 
+            directoryFileList, 
+            metadata: JSON.stringify(metadata)
+          }
         : [...currentFileList, ...directoryFileList],
     );
     return ret;
@@ -158,6 +180,7 @@ const FileUploadModal = ({
         onCancel={hideModal}
         confirmLoading={loading}
         afterClose={afterClose}
+        width={800}
       >
         <Flex gap={'large'} vertical>
           <Segmented
@@ -171,12 +194,77 @@ const FileUploadModal = ({
           />
           {value === 'local' ? (
             <>
-              <Checkbox
-                checked={parseOnCreation}
-                onChange={(e) => setParseOnCreation(e.target.checked)}
-              >
-                {t('parseOnCreation')}
-              </Checkbox>
+              <Flex gap={'middle'}>
+                <Checkbox
+                  checked={parseOnCreation}
+                  onChange={(e) => setParseOnCreation(e.target.checked)}
+                >
+                  {t('parseOnCreation')}
+                </Checkbox>
+                <Checkbox
+                  checked={isMicroCourse}
+                  onChange={(e) => setIsMicroCourse(e.target.checked)}
+                >
+                  是否是微课
+                </Checkbox>
+              </Flex>
+              {isMicroCourse && (
+                <Form
+                  form={form}
+                  layout="vertical"
+                  style={{ marginTop: 16 }}
+                >
+                  <Form.Item
+                    name="micro_course_id"
+                    label="微课ID"
+                    rules={[{ required: true, message: '请输入微课ID' }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="micro_course_name"
+                    label="微课名称"
+                    rules={[{ required: true, message: '请输入微课名称' }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="micro_course_desc"
+                    label="微课简介"
+                    rules={[{ required: true, message: '请输入微课简介' }]}
+                  >
+                    <Input.TextArea />
+                  </Form.Item>
+                  <Form.Item
+                    name="course_id"
+                    label="课程ID"
+                    rules={[{ required: true, message: '请输入课程ID' }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="course_name"
+                    label="课程名称"
+                    rules={[{ required: true, message: '请输入课程名称' }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="package_id"
+                    label="课包ID"
+                    rules={[{ required: true, message: '请输入课包ID' }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="package_name"
+                    label="课包名称"
+                    rules={[{ required: true, message: '请输入课包名称' }]}
+                  >
+                    <Input />
+                  </Form.Item>
+                </Form>
+              )}
               <Tabs defaultActiveKey="1" items={items} />
             </>
           ) : (
