@@ -454,7 +454,10 @@ def list_chat(tenant_id):
             renamed_dict[new_key] = value
         res["prompt"] = renamed_dict
         del res["prompt_config"]
-        new_dict = {"similarity_threshold": res["similarity_threshold"], "keywords_similarity_weight": 1 - res["vector_similarity_weight"], "top_n": res["top_n"], "rerank_model": res["rerank_id"]}
+        new_dict = {"similarity_threshold": res["similarity_threshold"],
+                    "keywords_similarity_weight": 1-res["vector_similarity_weight"],
+                    "top_n": res["top_n"],
+                    "rerank_model": res['rerank_id']}
         res["prompt"].update(new_dict)
         for key in key_list:
             del res[key]

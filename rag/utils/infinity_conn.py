@@ -359,7 +359,7 @@ class InfinityConnection(DocStoreConnection):
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
-                logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.info(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
                 if filter_fulltext and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_fulltext})
@@ -370,9 +370,9 @@ class InfinityConnection(DocStoreConnection):
                 if similarity:
                     matchExpr.extra_options["threshold"] = similarity
                     del matchExpr.extra_options["similarity"]
-                logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.info(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, FusionExpr):
-                logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.info(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
         if orderBy.fields:
@@ -392,6 +392,7 @@ class InfinityConnection(DocStoreConnection):
                 except Exception:
                     continue
                 table_list.append(table_name)
+                logging.info(f"output is {output}")
                 builder = table_instance.output(output)
                 if len(matchExprs) > 0:
                     for matchExpr in matchExprs:
@@ -423,9 +424,12 @@ class InfinityConnection(DocStoreConnection):
                     builder.sort(order_by_expr_list)
                 builder.offset(offset).limit(limit)
                 kb_res, extra_result = builder.option({"total_hits_count": True}).to_df()
+                if not kb_res.empty:
+                    for column in kb_res.columns:
+                        logging.info(f"column: {column}, value: {kb_res.iloc[0][column]}")
                 if extra_result:
                     total_hits_count += int(extra_result["total_hits_count"])
-                logger.debug(f"INFINITY search table: {str(table_name)}, result: {str(kb_res)}")
+                logger.info(f"INFINITY search table: {str(table_name)}, result: {str(kb_res)}")
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, output)
@@ -433,7 +437,7 @@ class InfinityConnection(DocStoreConnection):
             res['Sum'] = res[score_column] + res[PAGERANK_FLD]
             res = res.sort_values(by='Sum', ascending=False).reset_index(drop=True).drop(columns=['Sum'])
             res = res.head(limit)
-        logger.debug(f"INFINITY search final result: {str(res)}")
+        logger.info(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
 
     def get(

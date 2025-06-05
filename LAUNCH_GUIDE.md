@@ -1,5 +1,31 @@
 # RAGFlow 服务启动指南
 
+
+sudo账号安装pyicu依赖
+sudo apt install libicu-dev python3-icu pkg-config
+sh uv-installer.sh
+#根据uv提示，配置uv路径
+#配置python环境
+uv sync --python 3.10 --all-extras
+若uv安装并发太多，可以在pyproject.toml中进行配置修改
+uv run download_deps.py
+
+检查docker/.env的配置和conf中的service_conf.yaml中的配置是否吻合
+
+管理员权限安装libjemalloc
+apt install libjemalloc-dev
+
+#验证jemalloc
+JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
+
+#安装libglib相关依赖
+apt install -y libglib2.0-0 libglx-mesa0 libgl1 
+apt install libodbc2
+
+python api/ragflow_server.py 
+
+#拷贝依赖的rag/res下的模型到路径上
+
 ## 源代码启动
 # 由于pyicu安装太麻烦，目前pptx解析存在问题，需要转成pdf
 ```bash
