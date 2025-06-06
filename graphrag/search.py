@@ -319,8 +319,8 @@ class KGSearch(Dealer):
                             emb_mdl,
                             llm,
                             max_token: int = 8196,
-                            ent_topn: int = 8,
-                            rel_topn: int = 8,
+                            ent_topn: int = 10,
+                            rel_topn: int = 10,
                             ent_sim_threshold: float = 0.3,
                             rel_sim_threshold: float = 0.3,
                             **kwargs
@@ -344,6 +344,25 @@ class KGSearch(Dealer):
         logging.info(f"通过大模型获取到需要再图谱中查询的类型和实体关键字")
         ents_from_query = self.get_relevant_ents_by_keywords(ents, filters, idxnms, kb_ids, emb_mdl, ent_sim_threshold)
         ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnms, kb_ids, 10000)
+        
+        # 添加对特定类型实体的检索
+        special_types = ["MICROCOURSE", "COURSE", "COURSEPACKAGE"]
+        special_ents = {}
+        
+        # 合并所有特殊类型的查询
+        type_filters = deepcopy(filters)
+        type_filters["entity_type_kwd"] = special_types  # 直接使用列表进行或查询
+        
+        #基于查询文本进行相似度检索
+        matchDense = self.get_vector(qst, emb_mdl, 1024, 0.1)
+        es_res = self.dataStore.search(
+            ["content_with_weight", "entity_kwd", "rank_flt", "_score", "entity_type_kwd"],
+            [], type_filters, [matchDense], OrderByExpr(), 0, ent_topn, idxnms, kb_ids
+        )
+        type_ents = self._ent_info_from_(es_res, ent_sim_threshold)
+        special_ents.update(type_ents)
+
+        logging.info(f"After update Retrieved microcourse are {special_ents}")
         rels_from_txt = self.get_relevant_relations_by_txt(qst, filters, idxnms, kb_ids, emb_mdl, rel_sim_threshold)
         nhop_pathes = defaultdict(dict)
         for _, ent in ents_from_query.items():
@@ -396,7 +415,7 @@ class KGSearch(Dealer):
                 "sim": nhop_pathes[(f, t)]["sim"] * (s + 1),
                 "pagerank": nhop_pathes[(f, t)]["pagerank"]
             }
-
+        ents_from_query.update(special_ents)
         ents_from_query = sorted(ents_from_query.items(), key=lambda x: x[1]["sim"] * x[1]["pagerank"], reverse=True)[
                           :ent_topn]
         rels_from_txt = sorted(rels_from_txt.items(), key=lambda x: x[1]["sim"] * x[1]["pagerank"], reverse=True)[
@@ -406,11 +425,22 @@ class KGSearch(Dealer):
         relas = []
         logging.info(f"ents_from_query after sorted: {ents_from_query}")
         for n, ent in ents_from_query:
+            dsc_json = json.loads(ent["description"])
             ents.append({
                 "Entity": n,
                 "Score": "%.4f" % (ent["sim"] * ent["pagerank"]),
-                "Description": json.loads(ent["description"]).get("description", "") if ent["description"] else ""
+                "Description": dsc_json.get("description", "") if ent["description"] else "",
+                "Type": "Normal"  # 添加类型标记
             })
+
+            courses_key_type_map = {'micro_course_id': 'micro_course',
+                                    'course_id': "course",
+                                    'package_id': "course_package"
+                                    }
+            for k in courses_key_type_map.keys():
+                if k in dsc_json:
+                    ents[-1][k] = dsc_json.get(k, "")
+                    ents[-1]["Type"] = courses_key_type_map[k]
             max_token -= num_tokens_from_string(str(ents[-1]))
             if max_token <= 0:
                 ents = ents[:-1]

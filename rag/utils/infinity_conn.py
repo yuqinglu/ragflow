@@ -44,7 +44,8 @@ logger = logging.getLogger('ragflow.infinity_conn')
 
 def field_keyword(field_name: str):
         # The "docnm_kwd" field is always a string, not list.
-        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd" and field_name != "knowledge_graph_kwd"):
+        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd" and field_name != "knowledge_graph_kwd"
+                                         and field_name != "entity_type_kwd"):
             return True
         return False
 
@@ -342,6 +343,7 @@ class InfinityConnection(DocStoreConnection):
             for indexName in indexNames:
                 table_name = f"{indexName}_{knowledgebaseIds[0]}"
                 filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
+                logging.info(f"filter_cond: {filter_cond}")
                 break
 
         for matchExpr in matchExprs:
@@ -394,6 +396,8 @@ class InfinityConnection(DocStoreConnection):
                 table_list.append(table_name)
                 logging.info(f"output is {output}")
                 builder = table_instance.output(output)
+                if len(filter_cond) > 0:
+                    builder = builder.filter(filter_cond)
                 if len(matchExprs) > 0:
                     for matchExpr in matchExprs:
                         if isinstance(matchExpr, MatchTextExpr):
