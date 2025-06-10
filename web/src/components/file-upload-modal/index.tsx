@@ -14,6 +14,7 @@ import {
   UploadProps,
   Form,
   Input,
+  Select,
 } from 'antd';
 import { Dispatch, SetStateAction, useState } from 'react';
 
@@ -124,13 +125,19 @@ const FileUploadModal = ({
       micro_course_desc: formValues.micro_course_desc,
     } : {};
 
+    if (isMicroCourse && formValues.micro_course_difficulty !== undefined) {
+      metadata.micro_course_difficulty = formValues.micro_course_difficulty;
+    }
+
     if (isMicroCourse && formValues.course_id && formValues.course_name) {
       metadata.course_id = formValues.course_id;
       metadata.course_name = formValues.course_name;
+      metadata.course_desc = formValues.course_desc || '';
       
       if (formValues.package_id && formValues.package_name) {
         metadata.package_id = formValues.package_id;
         metadata.package_name = formValues.package_name;
+        metadata.package_desc = formValues.package_desc || '';
       }
     }
 
@@ -242,6 +249,20 @@ const FileUploadModal = ({
                     <Input.TextArea />
                   </Form.Item>
                   <Form.Item
+                    name="micro_course_difficulty"
+                    label="微课难度 (可选)"
+                    tooltip="0: 简单, 1: 中等, 2: 困难"
+                  >
+                    <Select
+                      options={[
+                        { value: 0, label: '简单' },
+                        { value: 1, label: '中等' },
+                        { value: 2, label: '困难' },
+                      ]}
+                      placeholder="请选择难度"
+                    />
+                  </Form.Item>
+                  <Form.Item
                     name="course_id"
                     label="课程ID (可选)"
                   >
@@ -254,6 +275,12 @@ const FileUploadModal = ({
                     <Input />
                   </Form.Item>
                   <Form.Item
+                    name="course_desc"
+                    label="课程简介 (可选)"
+                  >
+                    <Input.TextArea />
+                  </Form.Item>
+                  <Form.Item
                     name="package_id"
                     label="课包ID (可选)"
                   >
@@ -264,6 +291,12 @@ const FileUploadModal = ({
                     label="课包名称 (可选)"
                   >
                     <Input />
+                  </Form.Item>
+                  <Form.Item
+                    name="package_desc"
+                    label="课包简介 (可选)"
+                  >
+                    <Input.TextArea />
                   </Form.Item>
                 </Form>
               )}

@@ -106,6 +106,7 @@ class Extractor:
         micro_course_id = metadata.get('micro_course_id')
         micro_course_name = metadata.get('micro_course_name')
         micro_course_desc = metadata.get('micro_course_desc')
+        micro_course_difficulty = metadata.get('micro_course_difficulty') if 'micro_course_difficulty' in metadata else 0
         
         doc_id = doc.id
         
@@ -118,6 +119,7 @@ class Extractor:
             'entity_type': 'MICROCOURSE',
             'description': micro_course_desc,
             'entity_name': f'微课_{micro_course_name}',
+            'micro_course_difficulty': micro_course_difficulty,
             'source_id': [doc_id]
         }
         
@@ -125,13 +127,14 @@ class Extractor:
         all_relations = []
         
         # 2. 如果存在课程信息，创建课程实体和关系
-        course_id = metadata.get('course_id')
-        course_name = metadata.get('course_name')
+        course_id = metadata.get('course_id', None)
+        course_name = metadata.get('course_name', None)
+        course_desc = metadata.get('course_desc', '')
         if course_id and course_name:
             course_entity = {
                 'course_id': course_id,
                 'entity_type': 'COURSE',
-                'description': '课程',
+                'description': course_desc,
                 'entity_name': f'课程_{course_name}',
                 'source_id': [doc_id]
             }
@@ -147,13 +150,14 @@ class Extractor:
             all_relations.append(micro_course_to_course)
             
             # 3. 如果存在课包信息，创建课包实体和关系
-            package_id = metadata.get('package_id')
-            package_name = metadata.get('package_name')
+            package_id = metadata.get('pakcage_id', None)
+            package_name = metadata.get('package_name', None)
+            package_desc = metadata.get('package_desc', '')
             if package_id and package_name:
                 package_entity = {
                     'package_id': package_id,
                     'entity_type': 'COURSEPACKAGE',
-                    'description': '课包',
+                    'description': package_desc,
                     'entity_name': f'课包_{package_name}',
                     'source_id': [doc_id]
                 }

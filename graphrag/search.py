@@ -432,7 +432,9 @@ class KGSearch(Dealer):
                 "Description": dsc_json.get("description", "") if ent["description"] else "",
                 "Type": "Normal"  # 添加类型标记
             })
-
+            # 如果实体是微课，从description中提取微课难度字段
+            if 'micro_course_id' in dsc_json:
+                ents[-1]['micro_course_difficulty'] = dsc_json.get('micro_course_difficulty', 0)
             courses_key_type_map = {'micro_course_id': 'micro_course',
                                     'course_id': "course",
                                     'package_id': "course_package"
