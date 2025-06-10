@@ -117,16 +117,22 @@ const FileUploadModal = ({
     }
 
     const formValues = await form.validateFields();
-    const metadata = isMicroCourse ? {
+    const metadata: any = isMicroCourse ? {
       is_micro_course: true,
       micro_course_id: formValues.micro_course_id,
       micro_course_name: formValues.micro_course_name,
       micro_course_desc: formValues.micro_course_desc,
-      course_id: formValues.course_id,
-      course_name: formValues.course_name,
-      package_id: formValues.package_id,
-      package_name: formValues.package_name,
     } : {};
+
+    if (isMicroCourse && formValues.course_id && formValues.course_name) {
+      metadata.course_id = formValues.course_id;
+      metadata.course_name = formValues.course_name;
+      
+      if (formValues.package_id && formValues.package_name) {
+        metadata.package_id = formValues.package_id;
+        metadata.package_name = formValues.package_name;
+      }
+    }
 
     const ret = await onFileUploadOk?.(
       fileList
@@ -237,29 +243,25 @@ const FileUploadModal = ({
                   </Form.Item>
                   <Form.Item
                     name="course_id"
-                    label="课程ID"
-                    rules={[{ required: true, message: '请输入课程ID' }]}
+                    label="课程ID (可选)"
                   >
                     <Input />
                   </Form.Item>
                   <Form.Item
                     name="course_name"
-                    label="课程名称"
-                    rules={[{ required: true, message: '请输入课程名称' }]}
+                    label="课程名称 (可选)"
                   >
                     <Input />
                   </Form.Item>
                   <Form.Item
                     name="package_id"
-                    label="课包ID"
-                    rules={[{ required: true, message: '请输入课包ID' }]}
+                    label="课包ID (可选)"
                   >
                     <Input />
                   </Form.Item>
                   <Form.Item
                     name="package_name"
-                    label="课包名称"
-                    rules={[{ required: true, message: '请输入课包名称' }]}
+                    label="课包名称 (可选)"
                   >
                     <Input />
                   </Form.Item>

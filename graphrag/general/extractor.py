@@ -104,19 +104,15 @@ class Extractor:
         logging.info(f"meta_fields is {doc.meta_fields}")
         metadata = doc.meta_fields
         micro_course_id = metadata.get('micro_course_id')
-        course_id = metadata.get('course_id')
-        package_id = metadata.get('package_id')
         micro_course_name = metadata.get('micro_course_name')
         micro_course_desc = metadata.get('micro_course_desc')
-        course_name = metadata.get('course_name')
-        package_name = metadata.get('package_name')
-
+        
         doc_id = doc.id
         
-        if not all([micro_course_id, course_id, package_id]):
+        if not all([micro_course_id, micro_course_name, micro_course_desc]):
             return [], []
             
-        # 1. 创建微课、课程、课包实体
+        # 1. 创建微课实体
         micro_course_entity = {
             'micro_course_id': micro_course_id,
             'entity_type': 'MICROCOURSE',
@@ -125,40 +121,54 @@ class Extractor:
             'source_id': [doc_id]
         }
         
-        course_entity = {
-            'course_id': course_id,
-            'entity_type': 'COURSE',
-            'description': '课程',
-            'entity_name': f'课程_{course_name}',
-            'source_id': [doc_id]
-        }
+        all_entities = [micro_course_entity]
+        all_relations = []
         
-        package_entity = {
-            'package_id': package_id,
-            'entity_type': 'COURSEPACKAGE',
-            'description': '课包',
-            'entity_name': f'课包_{package_name}',
-            'source_id': [doc_id]
-        }
+        # 2. 如果存在课程信息，创建课程实体和关系
+        course_id = metadata.get('course_id')
+        course_name = metadata.get('course_name')
+        if course_id and course_name:
+            course_entity = {
+                'course_id': course_id,
+                'entity_type': 'COURSE',
+                'description': '课程',
+                'entity_name': f'课程_{course_name}',
+                'source_id': [doc_id]
+            }
+            all_entities.append(course_entity)
+            
+            micro_course_to_course = {
+                'src_id': f'微课_{micro_course_name}',
+                'tgt_id': f'课程_{course_name}',
+                'description': f'微课_{micro_course_name}属于课程_{course_name}中',
+                'source_id': [doc_id],
+                'weight': 5.0
+            }
+            all_relations.append(micro_course_to_course)
+            
+            # 3. 如果存在课包信息，创建课包实体和关系
+            package_id = metadata.get('package_id')
+            package_name = metadata.get('package_name')
+            if package_id and package_name:
+                package_entity = {
+                    'package_id': package_id,
+                    'entity_type': 'COURSEPACKAGE',
+                    'description': '课包',
+                    'entity_name': f'课包_{package_name}',
+                    'source_id': [doc_id]
+                }
+                all_entities.append(package_entity)
+                
+                course_to_package = {
+                    'src_id': f'课程_{course_name}',
+                    'tgt_id': f'课包_{package_name}',
+                    'description': f'课程_{course_name}属于课包_{package_name}中',
+                    'source_id': [doc_id],
+                    'weight': 5.0
+                }
+                all_relations.append(course_to_package)
         
-        # 2. 创建实体间的关系
-        micro_course_to_course = {
-            'src_id': f'微课_{micro_course_name}',
-            'tgt_id': f'课程_{course_name}',
-            'description': f'微课_{micro_course_name}属于课程_{course_name}中',
-            'source_id': [doc_id],
-            'weight': 5.0
-        }
-        
-        course_to_package = {
-            'src_id': f'课程_{course_name}',
-            'tgt_id': f'课包_{package_name}',
-            'description': f'课程_{course_name}属于课包_{package_name}中',
-            'source_id': [doc_id],
-            'weight': 5.0
-        }
-        
-        # 3. 对微课内容进行常规的知识图谱抽取
+        # 4. 对微课内容进行常规的知识图谱抽取
         out_results = []
         
         # 使用现有的抽取逻辑处理每个chunk
@@ -190,7 +200,7 @@ class Extractor:
             for (src, tgt), rels in maybe_edges.items():
                 nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
         
-        # 4. 建立微课与知识点实体的关联
+        # 5. 建立微课与知识点实体的关联
         for entity in all_entities_data:
             # 为每个知识点实体创建与微课的关联关系
             knowledge_relation = {
@@ -202,9 +212,9 @@ class Extractor:
             }
             all_relationships_data.append(knowledge_relation)
         
-        # 5. 合并所有实体和关系
-        all_entities = [micro_course_entity, course_entity, package_entity] + all_entities_data
-        all_relations = [micro_course_to_course, course_to_package] + all_relationships_data
+        # 6. 合并所有实体和关系
+        all_entities.extend(all_entities_data)
+        all_relations.extend(all_relationships_data)
         
         return all_entities, all_relations
 

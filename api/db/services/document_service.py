@@ -522,7 +522,11 @@ class DocumentService(CommonService):
         通过检查文档元数据中的特定字段来判断
         """
         # 检查是否存在微课相关的元数据字段
-        return doc_metadata.get("is_micro_course", False)
+        if not doc_metadata:
+            return False
+        # 只检查必要的微课字段
+        required_fields = ['micro_course_id', 'micro_course_name', 'micro_course_desc']
+        return all(field in doc_metadata for field in required_fields)
 
     @classmethod
     def detect_document_type(cls, metadata):
