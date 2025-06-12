@@ -70,7 +70,35 @@ class Docx(DocxParser):
             return None
 
     def __clean(self, line):
-        line = re.sub(r"\u3000", " ", line).strip()
+        # 替换全角空格为半角空格
+        line = re.sub(r"\u3000", " ", line)
+        
+        # 使用更全面的正则表达式处理所有中文字符之间的空格
+        # 匹配任意数量的中文字符，中间可能有空格
+        line = re.sub(r'([\u4e00-\u9fff]+)\s+([\u4e00-\u9fff]+)', r'\1\2', line)
+        
+        # 去除中文字符与数字之间的空格
+        line = re.sub(r'([\u4e00-\u9fff])\s+(\d)', r'\1\2', line)
+        line = re.sub(r'(\d)\s+([\u4e00-\u9fff])', r'\1\2', line)
+        
+        # 去除中文字符与英文之间的空格
+        line = re.sub(r'([\u4e00-\u9fff])\s+([a-zA-Z])', r'\1\2', line)
+        line = re.sub(r'([a-zA-Z])\s+([\u4e00-\u9fff])', r'\1\2', line)
+        
+        # 去除中文字符与标点符号之间的空格
+        # 转义引号并添加更多标点符号
+        line = re.sub(r'([\u4e00-\u9fff])\s+([，。！？；：\"\'（）【】《》、/\\])', r'\1\2', line)
+        line = re.sub(r'([，。！？；：\"\'（）【】《》、/\\])\s+([\u4e00-\u9fff])', r'\2\1', line)
+        
+        # 去除重复的空格
+        line = re.sub(r'\s+', ' ', line)
+        
+        # 去除首尾空格
+        line = line.strip()
+        
+        # 再次检查是否还有中文字符之间的空格（处理可能遗漏的情况）
+        line = re.sub(r'([\u4e00-\u9fff])\s+([\u4e00-\u9fff])', r'\1\2', line)
+        
         return line
 
     def __get_nearest_title(self, table_index, filename):
@@ -379,28 +407,32 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
             callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
+        except Exception as e:
+            logging.error(f"Failed to create vision model: {e}")
             vision_model = None
 
         sections, tables = Docx()(filename, binary)
         logging.info(f"sections: {sections}")
+        figures_data = []
         if vision_model:
-            figures_data = vision_figure_parser_figure_data_wraper(sections)
+            logging.info(f'vision_model is {vision_model}, start to enhance figure extraction...')
+            try:
+                # 使用增强的包装函数处理图片数据
+                figures_data = vision_figure_parser_figure_data_wraper(sections, context_window=5)
+                
+                docx_vision_parser = VisionFigureParser(
+                    vision_model=vision_model, 
+                    figures_data=figures_data,
+                    **kwargs
+                )
+                boosted_figures = docx_vision_parser(callback=callback)
+                figures_data = boosted_figures
+            except Exception as e:
+                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
 
-            if kwargs.get("figure_enhanced", False):
-                try:
-                    docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                    boosted_figures = docx_vision_parser(callback=callback)
-                    # 将增强后的图片数据单独保留
-                    figures = boosted_figures
-                except Exception as e:
-                    callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
-
-        # 将图片数据加入最终结果
-        #res = tokenize_table(tables, doc, is_english) + tokenize_table(figures_data, doc, is_english, table_type="figure")
         logging.info(f'tables is {tables}')
         res = tokenize_table(tables, doc, is_english)
-        logging.info(f'figures is {figures_data}')
+        logging.info(f'figure_data is {figures_data}')
         if figures_data:
             res.extend(tokenize_table(figures_data, doc, is_english, table_type="figure"))
         callback(0.8, "Finish parsing.")

@@ -25,7 +25,7 @@ from flask_login import current_user, login_required
 from api import settings
 from api.constants import IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileSource, FileType, ParserType, TaskStatus
-from api.db.db_models import File, Task
+from api.db.db_models import File, Task, Figure
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
@@ -33,6 +33,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService, queue_tasks
 from api.db.services.user_service import UserTenantService
+from api.db.services.figure_service import FigureService
 from api.utils import get_uuid
 from api.utils.api_utils import (
     get_data_error_result,
@@ -385,6 +386,8 @@ def run():
                 TaskService.filter_delete([Task.doc_id == id])
                 if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+                # 删除相关的figure数据
+                FigureService.filter_delete([(Figure.doc_id == id) & (Figure.kb_id == doc.kb_id)])
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 e, doc = DocumentService.get_by_id(id)

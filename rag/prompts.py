@@ -153,7 +153,7 @@ def citation_prompt():
 Document: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
 URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
 ID: 0
-The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it’s still his favorite crypto...
+The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it's still his favorite crypto...
 
 Document: Elon Musk's Dogecoin tweet sparks social media frenzy
 ID: 1
@@ -161,7 +161,7 @@ Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
 
 Document: Causal effect of Elon Musk tweets on Dogecoin price
 ID: 2
-If you think of Dogecoin — the cryptocurrency based on a meme — you can’t help but also think of Elon Musk...
+If you think of Dogecoin — the cryptocurrency based on a meme — you can't help but also think of Elon Musk...
 
 Document: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
 ID: 3
@@ -460,27 +460,24 @@ FAILURE HANDLING:
 
 
 def vision_llm_figure_describe_prompt() -> str:
-    #TODO: 图片视觉分析结果全是英文，对项目不好，项目需要中文
-    prompt = """
-You are an expert visual data analyst. Analyze the image and provide a comprehensive description of its content. Focus on identifying the type of visual data representation (e.g., bar chart, pie chart, line graph, table, flowchart), its structure, and any text captions or labels included in the image.
+    """
+    生成用于图片描述的提示词，包含置信度评分要求
+    Returns:
+        str: 提示词
+    """
+    return """请仔细分析这张图片，并结合上下文信息进行理解。你需要：
+1. 分析图片内容
+2. 结合上下文信息理解图片在文档中的作用，给出适合该图片的简要描述
+3. 给出一个置信度分数（0-100），表示你对图片内容理解的准确程度
+4. 如果置信度低于60，请直接返回"LOW_CONFIDENCE"
 
-Tasks:
-1. Describe the overall structure of the visual representation. Specify if it is a chart, graph, table, or diagram.
-2. Identify and extract any axes, legends, titles, or labels present in the image. Provide the exact text where available.
-3. Extract the data points from the visual elements (e.g., bar heights, line graph coordinates, pie chart segments, table rows and columns).
-4. Analyze and explain any trends, comparisons, or patterns shown in the data.
-5. Capture any annotations, captions, or footnotes, and explain their relevance to the image.
-6. Only include details that are explicitly present in the image. If an element (e.g., axis, legend, or caption) does not exist or is not visible, do not mention it.
-7. Text generated MUST be in Chinese
+请按以下格式输出：
+Confidence: [分数]
+Description: [描述]
 
-Output format (include only sections relevant to the image content):
-- Visual Type: [Type]
-- Title: [Title text, if available]
-- Axes / Legends / Labels: [Details, if available]
-- Data Points: [Extracted data]
-- Trends / Insights: [Analysis and interpretation]
-- Captions / Annotations: [Text and relevance, if available]
-
-Ensure high accuracy, clarity, and completeness in your analysis, and includes only the information present in the image. Avoid unnecessary statements about missing elements.
+注意：
+- 如果图片内容不清晰或与上下文关联性不强，请给出较低的置信度分数
+- 如果无法理解图片内容，请直接返回"LOW_CONFIDENCE"
+- 描述应该简洁明了，突出图片的关键信息
+- 请严格按照指定格式输出，不用分析原因或者分析步骤，譬如与上下文高度关联等解释
 """
-    return prompt
