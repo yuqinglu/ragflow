@@ -325,6 +325,7 @@ async def build_chunks(task, progress_callback):
             d["content"] = d["content_with_weight"]
             d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
             d["page_num"] = d["page_num_int"][0]
+            d["kb_id"] = task["kb_id"]  # 添加kb_id字段
             figures.append(d)
             del docs[i]
             FigureService.insert(**d)

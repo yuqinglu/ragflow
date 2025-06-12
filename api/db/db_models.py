@@ -803,6 +803,7 @@ class Figure(DataBaseModel):
     content = TextField(null=True, help_text="figure related content")
     img_id = CharField(max_length=64, null=False, help_text="image_id", index=True)
     page_num = IntegerField(null=False, help_text="page_num", index=True)
+    kb_id = CharField(max_length=64, null=False, help_text="knowledge base id", index=True)
     metadata = JSONField(null=True, default={})
 
     class Meta:
