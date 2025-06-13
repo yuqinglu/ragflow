@@ -290,35 +290,69 @@ def tokenize_chunks_with_images(chunks, doc, eng, images):
     return res
 
 
-def tokenize_table(tbls, doc, eng, batch_size=10,table_type="table"):
+def tokenize_table(tbls, doc, eng, batch_size=10, table_type="table"):
     res = []
     # add tables
-    for (img, rows), poss in tbls:
-        if table_type != "table" and not rows:
+    for table_data, poss in tbls:
+        if not table_data:
             continue
-        if isinstance(rows, str):
-            d = copy.deepcopy(doc)
-            tokenize(d, rows, eng)
-            d["content_with_weight"] = rows
-            if img:
-                d["image"] = img
-                d["doc_type_kwd"] = "image"
-            if poss:
-                add_positions(d, poss)
-            d["table_type"] = table_type
-            res.append(d)
-            continue
-        de = "; " if eng else "； "
-        for i in range(0, len(rows), batch_size):
-            d = copy.deepcopy(doc)
-            r = de.join(rows[i:i + batch_size])
-            tokenize(d, r, eng)
-            if img:
-                d["image"] = img
-                d["doc_type_kwd"] = "image"
+        # 检查是否是新的数据结构（包含filename）
+        if len(table_data) == 3:
+            img, rows, filename = table_data
+            if table_type != "table" and not rows:
+                continue
+            if isinstance(rows, str):
+                d = copy.deepcopy(doc)
+                tokenize(d, rows, eng)
+                d["content_with_weight"] = rows
+                if img:
+                    d["image"] = img
+                    d["doc_type_kwd"] = "image"
+                    d["image_name"] = filename  # 添加image_name字段
+                if poss:
+                    add_positions(d, poss)
                 d["table_type"] = table_type
-            add_positions(d, poss)
-            res.append(d)
+                res.append(d)
+                continue
+            de = "; " if eng else "； "
+            for i in range(0, len(rows), batch_size):
+                d = copy.deepcopy(doc)
+                r = de.join(rows[i:i + batch_size])
+                tokenize(d, r, eng)
+                if img:
+                    d["image"] = img
+                    d["doc_type_kwd"] = "image"
+                    d["image_name"] = filename  # 添加image_name字段
+                    d["table_type"] = table_type
+                add_positions(d, poss)
+                res.append(d)
+        else:
+            img, rows = table_data
+            if table_type != "table" and not rows:
+                continue
+            if isinstance(rows, str):
+                d = copy.deepcopy(doc)
+                tokenize(d, rows, eng)
+                d["content_with_weight"] = rows
+                if img:
+                    d["image"] = img
+                    d["doc_type_kwd"] = "image"
+                if poss:
+                    add_positions(d, poss)
+                d["table_type"] = table_type
+                res.append(d)
+                continue
+            de = "; " if eng else "； "
+            for i in range(0, len(rows), batch_size):
+                d = copy.deepcopy(doc)
+                r = de.join(rows[i:i + batch_size])
+                tokenize(d, r, eng)
+                if img:
+                    d["image"] = img
+                    d["doc_type_kwd"] = "image"
+                    d["table_type"] = table_type
+                add_positions(d, poss)
+                res.append(d)
     return res
 
 

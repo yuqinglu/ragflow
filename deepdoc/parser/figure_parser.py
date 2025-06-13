@@ -96,6 +96,7 @@ class VisionFigureParser:
         self.positions = []
         self.contexts = []  # 存储每个图片的上下文信息
         self.captions = []  # 存储每个图片的真实caption
+        self.filenames = {}  # 存储每个图片的文件名
 
         for item in figures_data:
             # position
@@ -138,18 +139,15 @@ class VisionFigureParser:
         self.assembled = []
         self.has_positions = len(self.positions) != 0
 
-        logging.info(f'figures len {len(self.figures)}, desc len is {len(self.descriptions)}, pos len is {len(self.positions)}')
-        logging.info(f'figure is {self.figures}')
-        logging.info(f'desc is {self.descriptions}')
-        logging.info(f'pos is {self.positions}')
         for i in range(len(self.figures)):
             figure = self.figures[i]
             desc = self.descriptions[i]
+            filename = self.filenames[i]
             pos = self.positions[i] if self.has_positions else [(0, 0, 0, 0, 0)]
 
             # 保持与figures_data相同的结构
             self.assembled.append((
-                (figure, desc),  # 图片和描述
+                (figure, desc, filename),  # 图片和描述
                 pos  # 位置信息
             ))
 
@@ -168,7 +166,7 @@ class VisionFigureParser:
                 enhanced_prompt += f"\n\n上下文信息：\n{context}"
             if caption:
                 enhanced_prompt += f"\n\n图片标题：\n{caption}"
-            
+
             description_text = picture_vision_llm_chunk(
                 binary=figure_binary,
                 vision_model=self.vision_model,
@@ -181,7 +179,7 @@ class VisionFigureParser:
             
             # 处理大模型的返回结果
             if description_text == "LOW_CONFIDENCE":
-                return figure_idx, ""
+                return figure_idx, "", ""
                 
             # 尝试提取置信度和描述
             try:
@@ -189,34 +187,37 @@ class VisionFigureParser:
                 description_text = description_text.strip()
                 description_arr = description_text.split('\n')
                 logging.info(f"description_arr is {description_arr}")
+                
                 # 确保数组不为空且第一个元素包含置信度信息
                 if not description_arr or 'Confidence:' not in description_arr[0]:
                     logging.warning(f"Invalid description format: {description_text}")
-                    return figure_idx, ""
+                    return figure_idx, "", ""
                     
                 confidence_line = description_arr[0]
                 confidence = int(confidence_line.split(':')[1].strip())
                 
-                if confidence < 60:
-                    return figure_idx, ""
+                if confidence < 75:
+                    return figure_idx, "", ""
                     
                 # 提取描述部分
                 description = description_arr[1].split(':')[1].strip()
-                logging.info(f"description is {description}, confidence is {confidence}")
-                return figure_idx, description
+                filename = description_arr[2].split(':')[1].strip()
+                logging.info(f"description is {description}, confidence is {confidence}, filename is {filename}")
+                return figure_idx, description, filename
             except Exception as e:
                 logging.error(f"Error parsing description: {e}, description_text: {description_text}")
                 # 如果解析失败，返回空字符串
-                return figure_idx, ""
+                return figure_idx, "", ""
 
         futures = []
         for idx, img_binary in enumerate(self.figures or []):
             futures.append(shared_executor.submit(process, idx, img_binary))
 
         for future in as_completed(futures):
-            figure_num, txt = future.result()
+            figure_num, txt, filename = future.result()
             # 直接使用大模型的描述，不再与原有信息拼接
             self.descriptions[figure_num] = [txt]
+            self.filenames[figure_num] = filename
 
         self._assemble()
 

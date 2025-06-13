@@ -299,9 +299,12 @@ async def build_chunks(task, progress_callback):
                     output_buffer = BytesIO(d["image"])
                 else:
                     d["image"].save(output_buffer, format='JPEG')
-                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+                
+                # 如果有image_name，使用它作为存储在minio中的文件名，否则使用id
+                minio_filename = chunk.get("image_name", d["id"])
+                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], minio_filename + '.jpeg', output_buffer.getvalue()))
 
-                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                d["img_id"] = "{}-{}".format(task["kb_id"], minio_filename)
                 del d["image"]
                 docs.append(d)
         except Exception:
@@ -315,20 +318,23 @@ async def build_chunks(task, progress_callback):
 
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
+    logging.info(f"docs is {docs}")
 
-    figures = []
-
-    for i in reversed(range(len(docs))):
+    for i in range(len(docs)):
         d = docs[i]
         if d.pop("table_type", None) == 'figure':
-            d["file_name"] = d["docnm_kwd"]
-            d["content"] = d["content_with_weight"]
-            d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-            d["page_num"] = d["page_num_int"][0]
-            d["kb_id"] = task["kb_id"]  # 添加kb_id字段
-            figures.append(d)
-            del docs[i]
-            FigureService.insert(**d)
+            image_name = d.pop('image_name', d['id'])
+            # 保存到figure表
+            figure_doc = {
+                "id": d["id"],
+                "doc_id": d["doc_id"],
+                "file_name": d["docnm_kwd"],
+                "content": d["content_with_weight"],
+                "img_id": "{}-{}".format(task["kb_id"], image_name),
+                "page_num": d["page_num_int"][0],
+                "kb_id": task["kb_id"]
+            }
+            FigureService.insert(**figure_doc)
 
 
     if task["parser_config"].get("auto_keywords", 0):
