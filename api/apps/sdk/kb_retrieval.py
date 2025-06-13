@@ -7,6 +7,8 @@ from api.utils.api_utils import get_json_result
 from rag.prompts import full_question
 from rag.nlp import search
 from rag.utils.doc_store_conn import OrderByExpr
+from rag.utils.storage_factory import STORAGE_IMPL
+from datetime import timedelta
 import json
 import logging
 import os
@@ -23,7 +25,20 @@ except Exception as e:
     logging.error(f"配置加载失败: {str(e)}")
     raise RuntimeError("系统配置初始化失败")
 
-
+def process_image_urls(chunks):
+    """处理chunks中的图片URL，为包含image的chunk生成带有时效性的访问URL"""
+    for chunk in chunks:
+        if 'doc_type_kwd' in chunk and 'image' in chunk['doc_type_kwd'] and 'image_id' in chunk:
+            try:
+                # img_id格式为[bucket]_[file_name]
+                bucket, filename = chunk['image_id'].split('-', 1)
+                # 生成24小时有效的预签名URL
+                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename + '.jpeg', timedelta(hours=24))
+                if presigned_url:
+                    chunk['image_url'] = presigned_url
+            except Exception as e:
+                logging.error(f"生成图片URL失败: {str(e)}")
+    return chunks
 
 @manager.route('/health', methods=['GET'])
 def health_check():
@@ -32,7 +47,6 @@ def health_check():
         "message": "server is up and running",
         "version": "1.0.0"
     })
-
 
 @manager.route('/chunks/retrieval', methods=['POST'])
 def chunks_retrieval():
@@ -46,7 +60,7 @@ def chunks_retrieval():
     kb_ids = CONFIG['kb_ids']
     embed_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_model_name)
 
-    chunks_res =settings.retrievaler.retrieval(
+    chunks_res = settings.retrievaler.retrieval(
         query,
         embed_mdl,
         tenant_id,
@@ -62,8 +76,10 @@ def chunks_retrieval():
     for c in chunks_res["chunks"]:
         for key in remove_keys:
             c.pop(key, None)
+    
+    # 处理图片URL
+    chunks_res["chunks"] = process_image_urls(chunks_res["chunks"])
     return jsonify(chunks_res)
-
 
 @manager.route('/knowledgegraph/retrieval', methods=['POST'])
 def knowledegraph_retrieval():
@@ -82,7 +98,6 @@ def knowledegraph_retrieval():
         chat_mdl,
     )
     return jsonify(kbinfos)
-
 
 @manager.route('/multiturn/chunks/retrieval', methods=['POST'])
 def multiturn_chunks_retrieval():
@@ -106,7 +121,7 @@ def multiturn_chunks_retrieval():
         questions = questions[-1:]
     refined_question = questions[-1]
     logging.info(f"Refine question is : {refined_question}")
-    chunks_res =settings.retrievaler.retrieval(
+    chunks_res = settings.retrievaler.retrieval(
         refined_question,
         embed_mdl,
         tenant_id,
@@ -121,6 +136,9 @@ def multiturn_chunks_retrieval():
     for c in chunks_res["chunks"]:
         for key in remove_keys:
             c.pop(key, None)
+    
+    # 处理图片URL
+    #chunks_res["chunks"] = process_image_urls(chunks_res["chunks"])
     return jsonify(chunks_res)
 
 @manager.route('/multiturn/kg/retrieval', methods=['POST'])
