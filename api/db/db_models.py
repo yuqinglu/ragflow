@@ -801,7 +801,7 @@ class Figure(DataBaseModel):
     doc_id = CharField(max_length=64, null=False, help_text="doc_id", index=True)
     file_name = CharField(max_length=255, null=False, help_text="file_name", index=True)
     content = TextField(null=True, help_text="figure related content")
-    img_id = CharField(max_length=64, null=False, help_text="image_id", index=True)
+    img_id = CharField(max_length=128, null=False, help_text="image_id", index=True)
     page_num = IntegerField(null=False, help_text="page_num", index=True)
     kb_id = CharField(max_length=64, null=False, help_text="knowledge base id", index=True)
     metadata = JSONField(null=True, default={})
