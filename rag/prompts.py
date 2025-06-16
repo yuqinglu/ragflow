@@ -476,6 +476,9 @@ def vision_llm_figure_describe_prompt() -> str:
    - 不要包含特殊字符
    - 不要包含空格
 5. 如果置信度低于60，请直接返回"LOW_CONFIDENCE"
+6. 如果图片与上下文关联性不强，请直接返回"LOW_CONFIDENCE"
+7. 如果图片不清晰或有二维码，请直接返回"LOW_CONFIDENCE"
+8. 如果图片是商标或LOGO，请直接返回"LOW_CONFIDENCE"
 
 请按以下格式输出：
 Confidence: [分数]
