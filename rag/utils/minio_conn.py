@@ -108,10 +108,10 @@ class RAGFlowMinio:
             logging.exception(f"obj_exist {bucket}/{filename} got exception")
             return False
 
-    def get_presigned_url(self, bucket, fnm, expires):
+    def get_presigned_url(self, bucket, fnm, expires, response_headers=None):
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, fnm, expires)
+                return self.conn.get_presigned_url("GET", bucket, fnm, expires, response_headers=response_headers)
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
                 self.__open__()

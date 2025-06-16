@@ -32,8 +32,14 @@ def process_image_urls(chunks):
             try:
                 # img_id格式为[bucket]_[file_name]
                 bucket, filename = chunk['image_id'].split('-', 1)
+                # 如果有image_name，使用它作为下载文件名
+                response_headers = None
+                if 'image_name' in chunk:
+                    response_headers = {
+                        'response-content-disposition': f'attachment; filename="{chunk["image_name"]}"'
+                    }
                 # 生成24小时有效的预签名URL
-                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename + '.jpeg', timedelta(hours=24))
+                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24), response_headers=response_headers)
                 if presigned_url:
                     chunk['image_url'] = presigned_url
             except Exception as e:

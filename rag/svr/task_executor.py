@@ -299,12 +299,14 @@ async def build_chunks(task, progress_callback):
                     output_buffer = BytesIO(d["image"])
                 else:
                     d["image"].save(output_buffer, format='JPEG')
-                
-                # 如果有image_name，使用它作为存储在minio中的文件名，否则使用id
-                minio_filename = chunk.get("image_name", d["id"])
-                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], minio_filename + '.jpeg', output_buffer.getvalue()))
 
-                d["img_id"] = "{}-{}".format(task["kb_id"], minio_filename)
+                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d['id'], output_buffer.getvalue()))
+
+                # 构造img_id时使用原始文件名
+                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                # 添加display_name字段，用于下载时显示的文件名
+                if "image_name" in d:
+                    d["image_name"] = d["image_name"] + '.jpeg'
                 del d["image"]
                 docs.append(d)
         except Exception:
@@ -323,14 +325,13 @@ async def build_chunks(task, progress_callback):
     for i in range(len(docs)):
         d = docs[i]
         if d.pop("table_type", None) == 'figure':
-            image_name = d.pop('image_name', d['id'])
             # 保存到figure表
             figure_doc = {
                 "id": d["id"],
                 "doc_id": d["doc_id"],
                 "file_name": d["docnm_kwd"],
                 "content": d["content_with_weight"],
-                "img_id": "{}-{}".format(task["kb_id"], image_name),
+                "img_id": "{}-{}".format(task["kb_id"], d['id']),
                 "page_num": d["page_num_int"][0],
                 "kb_id": task["kb_id"]
             }
@@ -754,6 +755,7 @@ async def main():
  / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /
 /_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/
     """)
+    logging.debug("debug mode is enabled")
     logging.info(f'TaskExecutor: RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
     print_rag_settings()

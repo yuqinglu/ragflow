@@ -84,7 +84,7 @@ class Dealer:
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd", "create_time",
-                       "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
+                       "available_int", "content_with_weight", "image_name", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -421,6 +421,8 @@ class Dealer:
                 "page_num_int": chunk["page_num_int"],
                 "create_time": chunk["create_time"]
             }
+            if "image_name" in chunk:
+                d["image_name"] = chunk["image_name"]
             if highlight and sres.highlight:
                 if id in sres.highlight:
                     d["highlight"] = rmSpace(sres.highlight[id])
