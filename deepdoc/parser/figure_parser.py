@@ -145,6 +145,10 @@ class VisionFigureParser:
             filename = self.filenames[i]
             pos = self.positions[i] if self.has_positions else [(0, 0, 0, 0, 0)]
 
+            # 过滤掉desc或filename为空的成员
+            if not desc or not any(desc) or not filename:
+                continue
+
             # 保持与figures_data相同的结构
             self.assembled.append((
                 (figure, desc, filename),  # 图片和描述
