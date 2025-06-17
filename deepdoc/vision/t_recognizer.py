@@ -65,7 +65,7 @@ def get_table_html(img, tb_cpns, ocr):
           "top": b[0][1], "text": t[0],
           "bottom": b[-1][1],
           "layout_type": "table",
-          "page_number": 0} for b, t in boxes if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
+          "page_number": 1} for b, t in boxes if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],  # 🔧 修复：使用1-based页码
         np.mean([b[-1][1] - b[0][1] for b, _ in boxes]) / 3
     )
 

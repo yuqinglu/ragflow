@@ -366,10 +366,15 @@ class RAGFlowPdfParser:
             self.page_images, self.boxes, ZM, drop=drop)
         # cumlative Y
         for i in range(len(self.boxes)):
-            self.boxes[i]["top"] += \
-                self.page_cum_height[self.boxes[i]["page_number"] - 1]
-            self.boxes[i]["bottom"] += \
-                self.page_cum_height[self.boxes[i]["page_number"] - 1]
+            # 🔧 修复：现在所有page_number都是1-based，需要减1访问0-based的page_cum_height数组
+            page_num = self.boxes[i]["page_number"]
+            if page_num > 0 and page_num <= len(self.page_cum_height):
+                ht = self.page_cum_height[page_num - 1] if page_num > 0 else 0
+            else:
+                ht = 0
+                logging.warning(f"Invalid page_number in _layouts_rec: {page_num}")
+            self.boxes[i]["top"] += ht
+            self.boxes[i]["bottom"] += ht
 
     def _text_merge(self):
         # merge adjusted boxes
@@ -778,17 +783,25 @@ class RAGFlowPdfParser:
 
         def cropout(bxs, ltype, poss):
             nonlocal ZM
-            pn = set([b["page_number"] - 1 for b in bxs])
+            pn = set([b["page_number"] for b in bxs])
             if len(pn) < 2:
                 pn = list(pn)[0]
-                ht = self.page_cum_height[pn]
+                ht = self.page_cum_height[pn - 1] if pn > 0 else 0  # 🔧 修复：pn现在是1-based，需要减1
                 b = {
                     "x0": np.min([b["x0"] for b in bxs]),
                     "top": np.min([b["top"] for b in bxs]) - ht,
                     "x1": np.max([b["x1"] for b in bxs]),
                     "bottom": np.max([b["bottom"] for b in bxs]) - ht
                 }
-                louts = [layout for layout in self.page_layout[pn] if layout["type"] == ltype]
+
+                logging.info(f"pn: {pn}")
+                # 🔧 修复：pn是1-based页码，但page_layout是0-based数组
+                layout_idx = pn - 1 if pn > 0 else 0
+                if layout_idx < len(self.page_layout):
+                    louts = [layout for layout in self.page_layout[layout_idx] if layout["type"] == ltype]
+                else:
+                    louts = []
+                    logging.warning(f"page_layout index {layout_idx} out of range for page {pn}")
                 ii = Recognizer.find_overlapped(b, louts, naive=True)
                 if ii is not None:
                     b = louts[ii]
@@ -802,9 +815,15 @@ class RAGFlowPdfParser:
                 if right < left:
                     right = left + 1
                 poss.append((pn + self.page_from, left, right, top, bott))
-                return self.page_images[pn] \
-                    .crop((left * ZM, top * ZM,
-                           right * ZM, bott * ZM))
+                # 🔧 修复：pn是1-based页码，但page_images是0-based数组
+                image_idx = pn - 1 if pn > 0 else 0
+                if image_idx < len(self.page_images):
+                    return self.page_images[image_idx] \
+                        .crop((left * ZM, top * ZM,
+                               right * ZM, bott * ZM))
+                else:
+                    logging.error(f"page_images index {image_idx} out of range for page {pn}")
+                    return None
             pn = {}
             for b in bxs:
                 p = b["page_number"] - 1
@@ -829,9 +848,9 @@ class RAGFlowPdfParser:
         figure_positions = []
         # crop figure out and add caption
         for k, bxs in figures.items():
-            txt = "\n".join([b["text"] for b in bxs])
-            if not txt:
-                continue
+            txt = "\n".join([b["text"].strip() for b in bxs])
+            # if not txt:
+            #     continue
 
             poss = []
 
@@ -901,8 +920,10 @@ class RAGFlowPdfParser:
 
     def _line_tag(self, bx, ZM):
         pn = [bx["page_number"]]
-        top = bx["top"] - self.page_cum_height[pn[0] - 1]
-        bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
+        # 🔧 修复：pn[0]已经是1-based页码，需要减1访问page_cum_height
+        ht = self.page_cum_height[pn[0] - 1] if pn[0] > 0 else 0
+        top = bx["top"] - ht
+        bott = bx["bottom"] - ht
         page_images_cnt = len(self.page_images)
         if pn[-1] - 1 >= page_images_cnt:
             return ""
@@ -1223,8 +1244,10 @@ class RAGFlowPdfParser:
     def get_position(self, bx, ZM):
         poss = []
         pn = bx["page_number"]
-        top = bx["top"] - self.page_cum_height[pn - 1]
-        bott = bx["bottom"] - self.page_cum_height[pn - 1]
+        # 🔧 修复：pn是1-based页码，需要减1访问page_cum_height
+        ht = self.page_cum_height[pn - 1] if pn > 0 else 0
+        top = bx["top"] - ht
+        bott = bx["bottom"] - ht
         poss.append((pn, bx["x0"], bx["x1"], top, min(
             bott, self.page_images[pn - 1].size[1] / ZM)))
         while bott * ZM > self.page_images[pn - 1].size[1]:

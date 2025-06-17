@@ -86,7 +86,7 @@ class LayoutRecognizer(Recognizer):
                     "score": float(b["score"]),
                     "x0": b["bbox"][0] / scale_factor, "x1": b["bbox"][2] / scale_factor,
                     "top": b["bbox"][1] / scale_factor, "bottom": b["bbox"][-1] / scale_factor,
-                    "page_number": pn,
+                    "page_number": pn + 1,  # 🔧 修复：使用1-based页码与OCR保持一致
                     } for b in lts if float(b["score"]) >= 0.4 or b["type"] not in self.garbage_layouts]
             lts = self.sort_Y_firstly(lts, np.mean(
                 [lt["bottom"] - lt["top"] for lt in lts]) / 2)

@@ -302,8 +302,8 @@ class Pdf(PdfParser):
         start = timer()
         self._text_merge()
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
-
         if separate_tables_figures:
+            # 调用提取函数
             tbls, figures = self._extract_table_figure(True, zoomin, True, True, True)
             self._concat_downward()
             logging.info("layouts cost: {}s".format(timer() - first_start))
@@ -466,7 +466,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             except Exception:
                 vision_model = None
 
-            sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
+            sections, tables, figures = pdf_parser(filename if not binary else binary, 
+                                                   from_page=from_page, 
+                                                   to_page=to_page, 
+                                                   callback=callback, 
+                                                   separate_tables_figures=True, 
+                                                   zoomin=5)
             if vision_model and kwargs.get("figure_enhanced", False):
                 callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
                 logging.info(f'Basic parsing, tables is {tables}')
