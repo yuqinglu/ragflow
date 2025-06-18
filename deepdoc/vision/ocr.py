@@ -18,6 +18,7 @@ import logging
 import copy
 import time
 import os
+from collections import Counter
 
 from huggingface_hub import snapshot_download
 
@@ -31,6 +32,14 @@ import cv2
 import onnxruntime as ort
 
 from .postprocess import build_post_process
+
+# GPU memory configuration - can be overridden by environment variables
+OCR_GPU_MEMORY_LIMIT = int(os.environ.get('OCR_GPU_MEMORY_LIMIT', 2 * 1024 * 1024 * 1024))  # Default 2GB
+OCR_REC_BATCH_SIZE = int(os.environ.get('OCR_REC_BATCH_SIZE', 8))  # Default batch size 8
+OCR_MEMORY_STRATEGY = os.environ.get('OCR_MEMORY_STRATEGY', 'kSameAsRequested')  # Memory allocation strategy
+
+logging.info(f"OCR GPU Configuration - Memory Limit: {OCR_GPU_MEMORY_LIMIT / (1024*1024*1024):.1f}GB, "
+             f"Batch Size: {OCR_REC_BATCH_SIZE}, Strategy: {OCR_MEMORY_STRATEGY}")
 
 loaded_models = {}
 
@@ -102,8 +111,8 @@ def load_model(model_dir, nm, device_id: int | None = None):
     if cuda_is_available():
         cuda_provider_options = {
             "device_id": device_id, # Use specific GPU
-            "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
-            "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+            "gpu_mem_limit": OCR_GPU_MEMORY_LIMIT, # Use configured GPU memory limit
+            "arena_extend_strategy": OCR_MEMORY_STRATEGY,  # Use configured memory allocation strategy
         }
         sess = ort.InferenceSession(
             model_file_path,
@@ -128,7 +137,7 @@ def load_model(model_dir, nm, device_id: int | None = None):
 class TextRecognizer:
     def __init__(self, model_dir, device_id: int | None = None):
         self.rec_image_shape = [int(v) for v in "3, 48, 320".split(",")]
-        self.rec_batch_num = 16
+        self.rec_batch_num = OCR_REC_BATCH_SIZE
         postprocess_params = {
             'name': 'CTCLabelDecode',
             "character_dict_path": os.path.join(model_dir, "ocr.res"),
@@ -137,6 +146,18 @@ class TextRecognizer:
         self.postprocess_op = build_post_process(postprocess_params)
         self.predictor, self.run_options = load_model(model_dir, 'rec', device_id)
         self.input_tensor = self.predictor.get_inputs()[0]
+        self.device_id = device_id
+        
+    def _cuda_memory_cleanup(self):
+        """Clean up CUDA memory cache"""
+        try:
+            import torch
+            if torch.cuda.is_available() and self.device_id is not None:
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize(device=self.device_id)
+                logging.info(f"CUDA memory cleanup performed for device {self.device_id}")
+        except Exception as e:
+            logging.warning(f"CUDA memory cleanup failed: {e}")
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape
@@ -359,9 +380,20 @@ class TextRecognizer:
         rec_res = [['', 0.0]] * img_num
         batch_num = self.rec_batch_num
         st = time.time()
+        
+        # Track memory errors to adaptively reduce batch size
+        memory_error_count = 0
 
-        for beg_img_no in range(0, img_num, batch_num):
-            end_img_no = min(img_num, beg_img_no + batch_num)
+        current_batch_num = batch_num
+        beg_img_no = 0
+        
+        while beg_img_no < img_num:
+            # Adaptive batch size based on memory errors
+            if memory_error_count > 0:
+                current_batch_num = max(1, current_batch_num // 2)
+                logging.warning(f"Reducing batch size to {current_batch_num} due to memory errors")
+                
+            end_img_no = min(img_num, beg_img_no + current_batch_num)
             norm_img_batch = []
             imgC, imgH, imgW = self.rec_image_shape[:3]
             max_wh_ratio = imgW / imgH
@@ -380,18 +412,45 @@ class TextRecognizer:
 
             input_dict = {}
             input_dict[self.input_tensor.name] = norm_img_batch
-            for i in range(100000):
+            outputs = None  # Initialize outputs
+            batch_memory_error = False
+            
+            for i in range(4):  # Limit retries to 4
                 try:
                     outputs = self.predictor.run(None, input_dict, self.run_options)
                     break
                 except Exception as e:
-                    if i >= 3:
-                        raise e
+                    if "RUNTIME_EXCEPTION" in str(e) and "memory" in str(e).lower():
+                        # GPU memory error, try to clear cache and reduce batch size
+                        memory_error_count += 1
+                        batch_memory_error = True
+                        import gc
+                        gc.collect()
+                        if hasattr(self, '_cuda_memory_cleanup'):
+                            self._cuda_memory_cleanup()
+                        if i >= 3:
+                            # If still failing after retries, force restart with smaller batch
+                            if len(norm_img_batch) > 1:
+                                logging.warning(f"GPU memory error, forcing smaller batch processing")
+                                break  # Break the retry loop and restart with smaller batch
+                            else:
+                                raise e
+                    else:
+                        if i >= 3:
+                            raise e
                     time.sleep(5)
+                    
+            # If we had memory error and no successful outputs, restart this batch with smaller size
+            if batch_memory_error and outputs is None:
+                continue  # Skip to next iteration with reduced batch size
+                
             preds = outputs[0]
             rec_result = self.postprocess_op(preds)
             for rno in range(len(rec_result)):
                 rec_res[indices[beg_img_no + rno]] = rec_result[rno]
+                
+            # Move to next batch
+            beg_img_no = end_img_no
 
         return rec_res, time.time() - st
 
@@ -423,7 +482,9 @@ class TextDetector:
         self.postprocess_op = build_post_process(postprocess_params)
         self.predictor, self.run_options = load_model(model_dir, 'det', device_id)
         self.input_tensor = self.predictor.get_inputs()[0]
-
+        self.device_id = device_id
+        
+        # Initialize preprocess operations
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
             pass
@@ -434,6 +495,17 @@ class TextDetector:
                 }
             }
         self.preprocess_op = create_operators(pre_process_list)
+        
+    def _cuda_memory_cleanup(self):
+        """Clean up CUDA memory cache"""
+        try:
+            import torch
+            if torch.cuda.is_available() and self.device_id is not None:
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize(device=self.device_id)
+                logging.info(f"CUDA memory cleanup performed for device {self.device_id}")
+        except Exception as e:
+            logging.warning(f"CUDA memory cleanup failed: {e}")
 
     def order_points_clockwise(self, pts):
         rect = np.zeros((4, 2), dtype="float32")
@@ -498,6 +570,12 @@ class TextDetector:
                 outputs = self.predictor.run(None, input_dict, self.run_options)
                 break
             except Exception as e:
+                if "RUNTIME_EXCEPTION" in str(e) and "memory" in str(e).lower():
+                    # GPU memory error, try to clear cache
+                    import gc
+                    gc.collect()
+                    if hasattr(self, '_cuda_memory_cleanup'):
+                        self._cuda_memory_cleanup()
                 if i >= 3:
                     raise e
                 time.sleep(5)
