@@ -794,7 +794,6 @@ class RAGFlowPdfParser:
                     "bottom": np.max([b["bottom"] for b in bxs]) - ht
                 }
 
-                logging.info(f"pn: {pn}")
                 # 🔧 修复：pn是1-based页码，但page_layout是0-based数组
                 layout_idx = pn - 1 if pn > 0 else 0
                 if layout_idx < len(self.page_layout):

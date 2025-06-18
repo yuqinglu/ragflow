@@ -115,7 +115,7 @@ if __name__ == '__main__':
 
     RuntimeConfig.DEBUG = args.debug
     if RuntimeConfig.DEBUG:
-        logging.info("run on debug mode")
+        logging.debug("run on debug mode")
 
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
@@ -124,7 +124,7 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
+    
     thread = ThreadPoolExecutor(max_workers=1)
     thread.submit(update_progress)
 

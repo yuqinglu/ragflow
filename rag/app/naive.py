@@ -29,7 +29,7 @@ from tika import parser
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper, pdf_vision_figure_parser_figure_data_wraper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 from rag.utils import num_tokens_from_string
@@ -412,7 +412,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             vision_model = None
 
         sections, tables = Docx()(filename, binary)
-        logging.info(f"sections: {sections}")
         figures_data = []
         if vision_model:
             logging.info(f'vision_model is {vision_model}, start to enhance figure extraction...')
@@ -430,9 +429,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             except Exception as e:
                 callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
 
-        logging.info(f'tables is {tables}')
         res = tokenize_table(tables, doc, is_english)
-        logging.info(f'figure_data is {figures_data}')
         if figures_data:
             res.extend(tokenize_table(figures_data, doc, is_english, table_type="figure"))
         callback(0.8, "Finish parsing.")
@@ -472,21 +469,29 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                                    callback=callback, 
                                                    separate_tables_figures=True, 
                                                    zoomin=5)
-            if vision_model and kwargs.get("figure_enhanced", False):
+            if vision_model:
                 callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
-                logging.info(f'Basic parsing, tables is {tables}')
                 try:
-                    pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
+                    # 使用新的PDF图片上下文包装函数
+                    enhanced_figures_data = pdf_vision_figure_parser_figure_data_wraper(
+                        figures, sections, min_context_chars=kwargs.get("min_context_chars", 800)
+                    )
+                    pdf_vision_parser = VisionFigureParser(
+                        vision_model=vision_model, 
+                        figures_data=enhanced_figures_data, 
+                        **kwargs
+                    )
                     boosted_figures = pdf_vision_parser(callback=callback)
                     # 将增强后的图片数据单独保留
                     figures = boosted_figures
                 except Exception as e:
+                    logging.error(f"Vision model error during figure enhancement: {e}")
                     callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
-                    tables.extend(figures)
-            logging.info(f'sections: {sections}')
-            logging.info(f'tables: {tables}')
-            logging.info(f'figures: {figures}')
-            res = tokenize_table(tables, doc, is_english) + tokenize_table(figures, doc, is_english, table_type="figure")
+            # 分别处理tables和figures
+            res = tokenize_table(tables, doc, is_english)
+            if figures:
+                res.extend(tokenize_table(figures, doc, is_english, table_type="figure"))
+            
             callback(0.8, "Finish parsing.")
 
         else:

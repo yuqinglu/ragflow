@@ -80,6 +80,123 @@ def vision_figure_parser_figure_data_wraper(figures_data_without_positions, cont
     return result
 
 
+def pdf_vision_figure_parser_figure_data_wraper(figures_data, sections, min_context_chars=800):
+    """
+    为PDF的图片数据包装上下文信息
+    Args:
+        figures_data: PDF中提取的图片数据列表，格式为 [(img, [caption]), positions]
+        sections: PDF中的文本段落列表，格式为 [(text, line_tag), ...]
+        min_context_chars: 本页文本的最小字符数阈值，默认为800，如果本页文本超过此阈值则优先使用本页
+    Returns:
+        处理后的图片数据列表，每个图片数据包含图片、描述和位置信息
+    """
+    if not figures_data or not sections:
+        return figures_data
+    
+    result = []
+    
+    # 提取所有文本段落，建立页码到文本的映射
+    page_text_map = {}
+    for text, line_tag in sections:
+        if not line_tag:
+            continue
+        try:
+            # 解析line_tag获取页码信息
+            # line_tag格式：@@page_num\t...##
+            import re
+            match = re.search(r'@@([0-9-]+)\t', line_tag)
+            if match:
+                page_nums = match.group(1).split('-')
+                for page_num_str in page_nums:
+                    page_num = int(page_num_str)
+                    if page_num not in page_text_map:
+                        page_text_map[page_num] = []
+                    page_text_map[page_num].append(text.strip())
+        except Exception as e:
+            logging.warning(f"Failed to parse line_tag: {line_tag}, error: {e}")
+            continue
+    
+    # 处理每个图片数据
+    for item in figures_data:
+        if len(item) != 2:
+            result.append(item)
+            continue
+            
+        img_desc, positions = item
+        if len(img_desc) != 2:
+            result.append(item)
+            continue
+            
+        img, captions = img_desc
+        if not positions:
+            result.append(item)
+            continue
+            
+        # 获取图片所在的页码（使用第一个位置的页码）
+        img_page = positions[0][0] if positions[0] and len(positions[0]) > 0 else 1
+        
+        # 收集上下文文本，按优先级：本页 > 上一页 > 下一页
+        context_texts = []
+        
+        # 1. 首先获取本页文本
+        current_page_texts = []
+        if img_page in page_text_map:
+            current_page_texts = page_text_map[img_page]
+            context_texts.extend(current_page_texts)
+        
+        # 检查本页文本长度，如果够多就优先使用本页
+        current_page_text = " ".join(current_page_texts)
+        if len(current_page_text) >= min_context_chars:
+            context = current_page_text
+            logging.debug(f"Figure on page {img_page}: Using current page context only ({len(current_page_text)} chars)")
+            if len(context) > 2000:  # 限制上下文长度
+                context = context[:2000] + "..."
+        else:
+            # 2. 本页文本不够，添加上一页文本
+            prev_page = img_page - 1
+            if prev_page in page_text_map:
+                context_texts.extend(page_text_map[prev_page])
+                logging.debug(f"Figure on page {img_page}: Added previous page {prev_page} context")
+            
+            # 3. 如果还不够，添加下一页文本
+            next_page = img_page + 1
+            if next_page in page_text_map:
+                context_texts.extend(page_text_map[next_page])
+                logging.debug(f"Figure on page {img_page}: Added next page {next_page} context")
+            
+            # 限制上下文长度，避免过长
+            context = " ".join(context_texts)
+            logging.debug(f"Figure on page {img_page}: Using multi-page context ({len(context)} chars)")
+            if len(context) > 2000:  # 限制上下文长度
+                context = context[:2000] + "..."
+        
+        # 组织描述信息
+        description_parts = []
+        if captions and any(captions):
+            caption = " ".join([c for c in captions if c and c.strip()])
+            if caption.strip():
+                description_parts.append(f"Caption: {caption}")
+        
+        if context.strip():
+            description_parts.append(f"Context: {context}")
+        
+        # 创建新的描述
+        if description_parts:
+            enhanced_description = " ||| ".join(description_parts)
+        else:
+            enhanced_description = captions[0] if captions else ""
+        
+        # 创建增强后的图片数据
+        enhanced_item = (
+            (img, [enhanced_description]),
+            positions
+        )
+        
+        result.append(enhanced_item)
+    
+    return result
+
+
 shared_executor = ThreadPoolExecutor(max_workers=10)
 
 
@@ -177,9 +294,6 @@ class VisionFigureParser:
                 prompt=enhanced_prompt,
                 callback=callback,
             )
-
-            logging.info(f"enhanced_prompt is {enhanced_prompt}")
-            logging.info(f"description_text is {description_text}")
             
             # 处理大模型的返回结果
             if description_text == "LOW_CONFIDENCE":
@@ -190,7 +304,6 @@ class VisionFigureParser:
                 # 去除开头和结尾的空白字符
                 description_text = description_text.strip()
                 description_arr = description_text.split('\n')
-                logging.info(f"description_arr is {description_arr}")
                 
                 # 确保数组不为空且第一个元素包含置信度信息
                 if not description_arr or 'Confidence:' not in description_arr[0]:
@@ -206,7 +319,6 @@ class VisionFigureParser:
                 # 提取描述部分
                 description = description_arr[1].split(':')[1].strip()
                 filename = description_arr[2].split(':')[1].strip()
-                logging.info(f"description is {description}, confidence is {confidence}, filename is {filename}")
                 return figure_idx, description, filename
             except Exception as e:
                 logging.error(f"Error parsing description: {e}, description_text: {description_text}")
