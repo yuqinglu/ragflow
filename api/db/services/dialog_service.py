@@ -146,12 +146,18 @@ def chat(dialog, messages, stream=True, **kwargs):
     check_llm_ts = timer()
 
     langfuse_tracer = None
+    langfuse_trace = None
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
-        langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-        if langfuse.auth_check():
-            langfuse_tracer = langfuse
-            langfuse.trace = langfuse_tracer.trace(name=f"{dialog.name}-{llm_model_config['llm_name']}")
+        try:
+            langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
+            if langfuse.auth_check():
+                langfuse_tracer = langfuse
+                langfuse_trace = langfuse_tracer.trace(name=f"{dialog.name}-{llm_model_config['llm_name']}")
+        except Exception as e:
+            logging.warning(f"Failed to initialize Langfuse tracer: {e}")
+            langfuse_tracer = None
+            langfuse_trace = None
 
     check_langfuse_tracer_ts = timer()
 
@@ -336,7 +342,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         return answer, idx
 
     def decorate_answer(answer):
-        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
+        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer, langfuse_trace
 
         refs = []
         ans = answer.split("</think>")
@@ -416,16 +422,28 @@ def chat(dialog, messages, stream=True, **kwargs):
         langfuse_output = "\n" + re.sub(r"^.*?(### Query:.*)", r"\1", prompt, flags=re.DOTALL)
         langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
 
-        # Add a condition check to call the end method only if langfuse_tracer exists
-        if langfuse_tracer and "langfuse_generation" in locals():
-            langfuse_generation.end(output=langfuse_output)
+        # End langfuse generation if it exists
+        try:
+            if hasattr(decorate_answer, 'langfuse_generation') and decorate_answer.langfuse_generation:
+                decorate_answer.langfuse_generation.end(output=langfuse_output)
+        except Exception as e:
+            logging.warning(f"Failed to end Langfuse generation: {e}")
 
         logging.info(f'langfuse output: {langfuse_output}')
         logging.info(f'reference are {refs}')
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
-    if langfuse_tracer:
-        langfuse_generation = langfuse_tracer.trace.generation(name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg})
+    # Create langfuse generation if tracer is available
+    if langfuse_trace:
+        try:
+            langfuse_generation = langfuse_trace.generation(name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg})
+            # Store generation in decorate_answer function for later access
+            decorate_answer.langfuse_generation = langfuse_generation
+        except Exception as e:
+            logging.warning(f"Failed to create Langfuse generation: {e}")
+            decorate_answer.langfuse_generation = None
+    else:
+        decorate_answer.langfuse_generation = None
 
     logging.info(f'prompt+prompt4citation is {prompt+prompt4citation}')
     if stream:

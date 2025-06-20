@@ -69,3 +69,72 @@ class TenantLangfuseService(CommonService):
     @classmethod
     def delete_model(cls, langfuse_model):
         langfuse_model.delete_instance()
+
+    @classmethod
+    def test_connection(cls, tenant_id):
+        """
+        测试langfuse连接和配置
+        返回测试结果和详细信息
+        """
+        try:
+            from langfuse import Langfuse
+            
+            langfuse_keys = cls.filter_by_tenant(tenant_id=tenant_id)
+            if not langfuse_keys:
+                return {
+                    "success": False,
+                    "error": "No Langfuse configuration found for this tenant",
+                    "details": "Please configure Langfuse keys first"
+                }
+            
+            # 测试基本连接
+            try:
+                langfuse = Langfuse(
+                    public_key=langfuse_keys.public_key, 
+                    secret_key=langfuse_keys.secret_key, 
+                    host=langfuse_keys.host
+                )
+                
+                # 测试认证
+                auth_result = langfuse.auth_check()
+                if not auth_result:
+                    return {
+                        "success": False,
+                        "error": "Authentication failed",
+                        "details": "Please check your public key, secret key, and host configuration"
+                    }
+                
+                # 测试创建trace
+                test_trace = langfuse.trace(name="test-connection")
+                test_generation = test_trace.generation(
+                    name="test-generation",
+                    model="test-model",
+                    input={"test": "connection"}
+                )
+                test_generation.end(output={"result": "success"})
+                
+                return {
+                    "success": True,
+                    "message": "Langfuse connection test successful",
+                    "details": f"Connected to {langfuse_keys.host}"
+                }
+                
+            except Exception as conn_error:
+                return {
+                    "success": False,
+                    "error": f"Connection error: {str(conn_error)}",
+                    "details": "Please check your host URL and network connectivity"
+                }
+                
+        except ImportError:
+            return {
+                "success": False,
+                "error": "Langfuse library not installed",
+                "details": "Please install langfuse: pip install langfuse"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "details": "Please check the system logs for more information"
+            }

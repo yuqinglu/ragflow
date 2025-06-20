@@ -217,10 +217,16 @@ class LLMBundle:
 
         langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
         if langfuse_keys:
-            langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-            if langfuse.auth_check():
-                self.langfuse = langfuse
-                self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
+            try:
+                langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
+                if langfuse.auth_check():
+                    self.langfuse = langfuse
+                    self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
+                else:
+                    self.langfuse = None
+            except Exception as e:
+                logging.warning(f"Failed to initialize Langfuse in LLMBundle: {e}")
+                self.langfuse = None
         else:
             self.langfuse = None
 
@@ -231,15 +237,22 @@ class LLMBundle:
         self.mdl.bind_tools(toolcall_session, tools)
 
     def encode(self, texts: list):
+        generation = None
         if self.langfuse:
-            generation = self.trace.generation(name="encode", model=self.llm_name, input={"texts": texts})
+            try:
+                generation = self.trace.generation(name="encode", model=self.llm_name, input={"texts": texts})
+            except Exception as e:
+                logging.warning(f"Failed to create Langfuse generation for encode: {e}")
 
         embeddings, used_tokens = self.mdl.encode(texts)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
-        if self.langfuse:
-            generation.end(usage_details={"total_tokens": used_tokens})
+        if generation:
+            try:
+                generation.end(usage_details={"total_tokens": used_tokens})
+            except Exception as e:
+                logging.warning(f"Failed to end Langfuse generation for encode: {e}")
 
         return embeddings, used_tokens
 
@@ -356,8 +369,12 @@ class LLMBundle:
         return txt
 
     def chat_streamly(self, system, history, gen_conf):
+        generation = None
         if self.langfuse:
-            generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
+            try:
+                generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
+            except Exception as e:
+                logging.warning(f"Failed to create Langfuse generation for chat_streamly: {e}")
 
         ans = ""
         chat_streamly = self.mdl.chat_streamly
@@ -368,8 +385,11 @@ class LLMBundle:
         for txt in chat_streamly(system, history, gen_conf):
             if isinstance(txt, int):
                 total_tokens = txt
-                if self.langfuse:
-                    generation.end(output={"output": ans})
+                if generation:
+                    try:
+                        generation.end(output={"output": ans})
+                    except Exception as e:
+                        logging.warning(f"Failed to end Langfuse generation for chat_streamly: {e}")
                 break
 
             if txt.endswith("</think>"):
@@ -378,5 +398,5 @@ class LLMBundle:
             ans += txt
             yield ans
         if total_tokens > 0:
-            if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
-                logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
+            if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
+                logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))

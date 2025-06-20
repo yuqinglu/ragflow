@@ -95,3 +95,18 @@ def delete_api_key():
             return get_json_result(data=True)
         except Exception as e:
             server_error_response(e)
+
+
+@manager.route("/test_connection", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request()
+def test_langfuse_connection():
+    """测试langfuse连接"""
+    try:
+        result = TenantLangfuseService.test_connection(tenant_id=current_user.id)
+        if result["success"]:
+            return get_json_result(data=result, message=result["message"])
+        else:
+            return get_error_data_result(message=result["error"], data=result)
+    except Exception as e:
+        return server_error_response(e)
