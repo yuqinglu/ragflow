@@ -28,11 +28,412 @@ from tika import parser
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.utils.langfuse_utils import LangfuseUtils
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper, pdf_vision_figure_parser_figure_data_wraper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 from rag.utils import num_tokens_from_string
+
+
+def _trace_sections_and_tables_to_langfuse(sections, tables, main_trace):
+    """在主 trace 下添加 sections 和 tables 内容的 span"""
+    if not main_trace:
+        return
+    
+    try:
+        # 处理 sections 内容
+        sections_data = []
+        for i, section in enumerate(sections):
+            section_info = {
+                "index": i,
+                "text": section[0][:500] if section[0] else "",  # 前500字符
+                "has_image": section[1] is not None,
+                "style": section[2] if len(section) > 2 else "unknown",
+                "text_length": len(section[0]) if section[0] else 0
+            }
+            
+            # 如果有图片，尝试编码为base64（用于展示）
+            if section[1] is not None:
+                try:
+                    import base64
+                    from io import BytesIO
+                    img_buffer = BytesIO()
+                    section[1].save(img_buffer, format='PNG')
+                    img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+                    section_info["image_preview"] = f"data:image/png;base64,{img_base64}"
+                except Exception:
+                    section_info["image_preview"] = "Failed to encode image"
+            
+            sections_data.append(section_info)
+        
+        # 处理 tables 内容
+        tables_data = []
+        for i, table in enumerate(tables):
+            table_info = {
+                "index": i,
+                "html_content": table[0][1][:1000] if table[0] and table[0][1] else "",  # 前1000字符
+                "content_length": len(table[0][1]) if table[0] and table[0][1] else 0,
+                "table_type": table[1] if len(table) > 1 else "unknown"
+            }
+            tables_data.append(table_info)
+        
+        # 创建 sections 和 tables 的联合 span
+        content_span = create_span_with_langfuse(
+            main_trace,
+            name="sections_and_tables",
+            input_data={
+                "sections_count": len(sections),
+                "tables_count": len(tables)
+            },
+            output_data={
+                "sections_preview": sections_data,
+                "tables_preview": tables_data,
+                "summary": {
+                    "total_sections": len(sections),
+                    "total_tables": len(tables),
+                    "sections_with_images": sum(1 for s in sections if s[1] is not None)
+                }
+            }
+        )
+        
+    except Exception as e:
+        logging.warning(f"Failed to trace sections and tables to Langfuse: {e}")
+
+
+def _trace_figure_enhancement_to_langfuse(original_figures_data, enhanced_figures_data, main_trace):
+    """在主 trace 下添加图像增强结果的 span，同时包含原始和增强后的信息"""
+    if not main_trace or not enhanced_figures_data:
+        return
+    
+    try:
+        # 创建原始图片数据的索引，用于匹配增强后的图片
+        original_images_info = []
+        for i, original_figure in enumerate(original_figures_data):
+            if isinstance(original_figure, tuple) and len(original_figure) >= 1:
+                original_content = original_figure[0]
+                if isinstance(original_content, tuple) and len(original_content) >= 2:
+                    image_data, original_descriptions = original_content[0], original_content[1]
+                    if isinstance(original_descriptions, list) and original_descriptions:
+                        # 这里就是包含"Caption: ... ||| Context: ..."的原始描述
+                        original_context = original_descriptions[0] if original_descriptions[0] else ""
+                        original_images_info.append({
+                            "original_index": i,
+                            "image_data": image_data,
+                            "original_context": original_context
+                        })
+        
+        # 处理增强后的图像数据
+        enhanced_figures = []
+        for i, enhanced_figure in enumerate(enhanced_figures_data[:5]):  # 只取前5个
+            figure_info = {
+                "enhanced_index": i,
+                "enhanced_description": "",
+                "generated_image_name": "",
+                "original_context": "",
+                "original_index": -1,
+                "has_image": False
+            }
+            
+            # 从增强后的数据中提取信息
+            if isinstance(enhanced_figure, tuple) and len(enhanced_figure) >= 2:
+                # 格式: ((image, descriptions, filename), positions)
+                content, positions = enhanced_figure[0], enhanced_figure[1] if len(enhanced_figure) > 1 else []
+                if isinstance(content, tuple) and len(content) >= 2:
+                    image_data = content[0]
+                    descriptions = content[1]
+                    filename = content[2] if len(content) >= 3 else ""
+                    
+                    # 提取增强后的描述（VisionFigureParser生成的）
+                    if isinstance(descriptions, list) and descriptions:
+                        enhanced_desc = descriptions[0] if descriptions[0] else ""
+                        figure_info["enhanced_description"] = enhanced_desc[:500] if enhanced_desc else ""
+                    
+                    # 提取大模型生成的image_name
+                    figure_info["generated_image_name"] = filename if filename else ""
+                    
+                    # 通过图片数据匹配原始上下文信息
+                    # 由于VisionFigureParser可能会跳过一些图片，我们需要通过图片内容来匹配
+                    if image_data is not None:
+                        figure_info["has_image"] = True
+                        
+                        # 尝试匹配原始图片信息
+                        for orig_info in original_images_info:
+                            if orig_info["image_data"] is image_data:  # 同一个图片对象
+                                figure_info["original_context"] = orig_info["original_context"][:500] if orig_info["original_context"] else ""
+                                figure_info["original_index"] = orig_info["original_index"]
+                                break
+                        
+                        # 编码图片预览
+                        try:
+                            import base64
+                            from io import BytesIO
+                            img_buffer = BytesIO()
+                            image_data.save(img_buffer, format='PNG')
+                            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+                            figure_info["image_preview"] = f"data:image/png;base64,{img_base64}"
+                        except Exception:
+                            figure_info["image_preview"] = "Failed to encode enhanced image"
+            
+            enhanced_figures.append(figure_info)
+        
+        # 在主 trace 下创建图像增强 span
+        enhancement_span = create_span_with_langfuse(
+            main_trace,
+            name="figure_enhancement",
+            input_data={
+                "original_figures_count": len(original_figures_data),
+                "enhanced_figures_count": len(enhanced_figures_data)
+            },
+            output_data={
+                "enhanced_figures": enhanced_figures,
+                "summary": {
+                    "total_original": len(original_figures_data),
+                    "total_enhanced": len(enhanced_figures_data),
+                    "figures_with_descriptions": sum(1 for f in enhanced_figures if f["enhanced_description"]),
+                    "figures_with_generated_names": sum(1 for f in enhanced_figures if f["generated_image_name"]),
+                    "figures_with_images": sum(1 for f in enhanced_figures if f["has_image"]),
+                    "figures_with_original_context": sum(1 for f in enhanced_figures if f["original_context"]),
+                    "figures_matched_to_original": sum(1 for f in enhanced_figures if f["original_index"] >= 0)
+                }
+            }
+        )
+        
+        # 注意：主 trace 的最终更新在主流程中完成
+        
+    except Exception as e:
+        logging.warning(f"Failed to trace figure enhancement to Langfuse: {e}")
+
+
+def _trace_pdf_sections_tables_figures_to_langfuse(sections, tables, figures, main_trace):
+    """在主 trace 下添加 PDF sections、tables 和 figures 的 span"""
+    if not main_trace:
+        return
+    
+    try:
+        # 处理 sections 内容
+        sections_data = []
+        for i, section in enumerate(sections):
+            section_info = {
+                "index": i,
+                "content_preview": "",
+                "line_tag": "",
+                "content_length": 0
+            }
+            
+            if isinstance(section, tuple) and len(section) >= 2:
+                content, line_tag = section[0], section[1]
+                section_info["content_preview"] = content[:200] if content else ""
+                section_info["line_tag"] = line_tag[:100] if line_tag else ""
+                section_info["content_length"] = len(content) if content else 0
+            elif isinstance(section, str):
+                section_info["content_preview"] = section[:200]
+                section_info["content_length"] = len(section)
+            
+            sections_data.append(section_info)
+        
+        # 处理 tables 内容
+        tables_data = []
+        for i, table in enumerate(tables):
+            table_info = {
+                "index": i,
+                "table_preview": "",
+                "table_type": "",
+                "content_length": 0
+            }
+            
+            # PDF table 数据结构可能比较复杂，这里做简单处理
+            if isinstance(table, tuple) and len(table) >= 2:
+                table_content = table[0]
+                if isinstance(table_content, str):
+                    table_info["table_preview"] = table_content[:300]
+                    table_info["content_length"] = len(table_content)
+                elif hasattr(table_content, '__str__'):
+                    content_str = str(table_content)
+                    table_info["table_preview"] = content_str[:300]
+                    table_info["content_length"] = len(content_str)
+                table_info["table_type"] = "pdf_extracted_table"
+            elif isinstance(table, str):
+                table_info["table_preview"] = table[:300]
+                table_info["content_length"] = len(table)
+                table_info["table_type"] = "text_table"
+            else:
+                table_info["table_type"] = str(type(table))
+            
+            tables_data.append(table_info)
+        
+        # 处理 figures 内容
+        figures_data = []
+        for i, figure in enumerate(figures):
+            figure_info = {
+                "index": i,
+                "has_image": False,
+                "captions": [],
+                "positions": [],
+                "figure_type": ""
+            }
+            
+            # PDF figure 数据结构: ((image, captions), positions)
+            if isinstance(figure, tuple) and len(figure) >= 2:
+                img_desc, positions = figure[0], figure[1]
+                if isinstance(img_desc, tuple) and len(img_desc) >= 2:
+                    image_data, captions = img_desc[0], img_desc[1]
+                    
+                    figure_info["has_image"] = image_data is not None
+                    figure_info["captions"] = captions[:3] if isinstance(captions, list) else []  # 只取前3个caption
+                    figure_info["positions"] = positions[:3] if isinstance(positions, list) else []  # 只取前3个位置
+                    figure_info["figure_type"] = "pdf_extracted_figure"
+                    
+                    # 如果有图片，尝试编码预览
+                    if image_data is not None:
+                        try:
+                            import base64
+                            from io import BytesIO
+                            img_buffer = BytesIO()
+                            image_data.save(img_buffer, format='PNG')
+                            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+                            figure_info["image_preview"] = f"data:image/png;base64,{img_base64}"
+                        except Exception:
+                            figure_info["image_preview"] = "Failed to encode figure image"
+            else:
+                figure_info["figure_type"] = str(type(figure))
+                
+            figures_data.append(figure_info)
+        
+        # 在主 trace 下创建 PDF 内容 span
+        content_span = create_span_with_langfuse(
+            main_trace,
+            name="pdf_content_extraction",
+            input_data={"document_type": "pdf"},
+            output_data={
+                "sections": sections_data,
+                "tables": tables_data,
+                "figures": figures_data,
+                "summary": {
+                    "total_sections": len(sections),
+                    "total_tables": len(tables),
+                    "total_figures": len(figures),
+                    "sections_with_content": sum(1 for s in sections_data if s["content_length"] > 0),
+                    "tables_with_content": sum(1 for t in tables_data if t["content_length"] > 0),
+                    "figures_with_images": sum(1 for f in figures_data if f["has_image"]),
+                    "figures_with_captions": sum(1 for f in figures_data if f["captions"])
+                }
+            }
+        )
+        
+    except Exception as e:
+        logging.warning(f"Failed to trace PDF sections, tables and figures to Langfuse: {e}")
+
+
+def _trace_chunks_merging_to_langfuse(sections, chunks, images, parser_config, main_trace):
+    """在主 trace 下添加 sections 合并成 chunks 的 span"""
+    if not main_trace:
+        return
+    
+    try:
+        # 收集合并前的信息
+        original_sections_info = []
+        for i, section in enumerate(sections):  # 只取前10个sections进行详细记录
+            section_info = {
+                "index": i,
+                "content_preview": "",
+                "content_length": 0,
+                "has_line_tag": False
+            }
+            
+            if isinstance(section, tuple) and len(section) >= 2:
+                content, line_tag = section[0], section[1]
+                section_info["content_preview"] = content[:200] if content else ""
+                section_info["content_length"] = len(content) if content else 0
+                section_info["has_line_tag"] = bool(line_tag)
+            elif isinstance(section, str):
+                section_info["content_preview"] = section[:200]
+                section_info["content_length"] = len(section)
+            
+            original_sections_info.append(section_info)
+        
+        # 收集合并后的chunks信息
+        chunks_info = []
+        for i, chunk in enumerate(chunks):  # 只取前10个chunks进行详细记录
+            chunk_info = {
+                "index": i,
+                "content_preview": chunk if chunk else "",
+                "content_length": len(chunk) if chunk else 0
+            }
+            chunks_info.append(chunk_info)
+        
+        # 收集images信息
+        images_info = []
+        if images:
+            for i, image in enumerate(images):  # 只取前5个images
+                image_info = {
+                    "index": i,
+                    "has_image": image is not None
+                }
+                
+                # 如果有图片，尝试编码预览
+                if image is not None:
+                    try:
+                        import base64
+                        from io import BytesIO
+                        img_buffer = BytesIO()
+                        image.save(img_buffer, format='PNG')
+                        img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+                        image_info["image_preview"] = f"data:image/png;base64,{img_base64}"
+                    except Exception:
+                        image_info["image_preview"] = "Failed to encode chunk image"
+                
+                images_info.append(image_info)
+        
+        # 在主 trace 下创建 chunks 合并 span
+        merging_span = create_span_with_langfuse(
+            main_trace,
+            name="sections_to_chunks_merging",
+            input_data={
+                "chunk_token_num": parser_config.get("chunk_token_num", 128),
+                "delimiter": parser_config.get("delimiter", "\n!?。；！？"),
+                "original_sections_count": len(sections)
+            },
+            output_data={
+                "original_sections": original_sections_info,
+                "merged_chunks": chunks_info,
+                "chunk_images": images_info,
+                "summary": {
+                    "original_sections_count": len(sections),
+                    "merged_chunks_count": len(chunks),
+                    "chunks_with_images": len(images) if images else 0,
+                    "sections_with_content": sum(1 for s in original_sections_info if s["content_length"] > 0),
+                    "average_section_length": sum(s["content_length"] for s in original_sections_info) / len(original_sections_info) if original_sections_info else 0,
+                    "average_chunk_length": sum(c["content_length"] for c in chunks_info) / len(chunks_info) if chunks_info else 0,
+                    "compression_ratio": len(sections) / len(chunks) if chunks else 0
+                }
+            }
+        )
+        
+    except Exception as e:
+        logging.warning(f"Failed to trace chunks merging to Langfuse: {e}")
+
+
+# 示例：如何添加新的追踪步骤
+def _trace_tokenization_to_langfuse(chunks, main_trace):
+    """示例：追踪 tokenization 步骤"""
+    if not main_trace:
+        return
+    
+    try:
+        tokenization_span = create_span_with_langfuse(
+            main_trace,
+            name="tokenization",
+            input_data={"chunks_count": len(chunks)},
+            output_data={
+                "summary": {
+                    "total_chunks": len(chunks),
+                    "chunks_preview": [chunk[:100] for chunk in chunks[:3]]  # 前3个chunk的预览
+                }
+            }
+        )
+    except Exception as e:
+        logging.warning(f"Failed to trace tokenization to Langfuse: {e}")
 
 
 class Docx(DocxParser):
@@ -388,7 +789,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Successive text will be sliced into pieces using 'delimiter'.
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
-
+    
+    # 记录全过程开始时间
+    start_time = timer()
+    
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
@@ -401,8 +805,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     res = []
     pdf_parser = None
     section_images = None
+    main_trace = None  # 初始化主trace变量，用于所有文档类型
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 在主流程开始时创建 Langfuse 主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="docx_document_analysis",
+                input_data={"filename": filename},
+                metadata={"type": "docx_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for DOCX: {e}")
 
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
@@ -412,20 +829,28 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             vision_model = None
 
         sections, tables = Docx()(filename, binary)
+        
+        # 追踪 sections 和 tables 内容
+        _trace_sections_and_tables_to_langfuse(sections, tables, main_trace)
+        
         figures_data = []
         if vision_model:
             logging.info(f'vision_model is {vision_model}, start to enhance figure extraction...')
             try:
                 # 使用增强的包装函数处理图片数据
-                figures_data = vision_figure_parser_figure_data_wraper(sections, context_window=5)
+                original_figures_data = vision_figure_parser_figure_data_wraper(sections, context_window=5)
                 
                 docx_vision_parser = VisionFigureParser(
                     vision_model=vision_model, 
-                    figures_data=figures_data,
+                    figures_data=original_figures_data,
                     **kwargs
                 )
                 boosted_figures = docx_vision_parser(callback=callback)
                 figures_data = boosted_figures
+                
+                # 追踪图像增强结果，传递原始和增强后的数据
+                _trace_figure_enhancement_to_langfuse(original_figures_data, figures_data, main_trace)
+                
             except Exception as e:
                 callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
 
@@ -434,6 +859,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.extend(tokenize_table(figures_data, doc, is_english, table_type="figure"))
         callback(0.8, "Finish parsing.")
 
+        # 这里可以很容易地添加其他步骤的追踪，例如：
+        # _trace_tokenization_to_langfuse(res, main_trace)
+
         st = timer()
 
         chunks, images = naive_merge_docx(
@@ -441,10 +869,31 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))
 
+        # 追踪 sections 合并成 chunks 的过程
+        _trace_chunks_merging_to_langfuse(sections, chunks, images, parser_config, main_trace)
+
         if kwargs.get("section_only", False):
-            return tokenize_chunks_with_images(chunks, doc, is_english, images)
+            final_result = tokenize_chunks_with_images(chunks, doc, is_english, images)
+            # 更新主 trace 的最终结果
+            if main_trace:
+                LangfuseUtils.update_trace(main_trace, {
+                    "section_only": True,
+                    "final_chunks_count": len(final_result),
+                    "analysis_complete": True,
+                    "processing_time_seconds": timer() - start_time
+                })
+            return final_result
 
         res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+        
+        # 更新主 trace 的最终结果
+        if main_trace:
+            LangfuseUtils.update_trace(main_trace, {
+                "final_chunks_count": len(res),
+                "analysis_complete": True,
+                "processing_time_seconds": timer() - start_time
+            })
+        
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         return res
 
@@ -453,6 +902,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
         callback(0.1, "Start to parse.")
+
+        # 为PDF分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="pdf_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "pdf_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for PDF: {e}")
 
         if layout_recognizer == "DeepDOC":
             pdf_parser = Pdf()
@@ -469,21 +930,29 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                                    callback=callback, 
                                                    separate_tables_figures=True, 
                                                    zoomin=5)
+            
+            # 追踪 PDF sections、tables 和 figures 内容
+            _trace_pdf_sections_tables_figures_to_langfuse(sections, tables, figures, main_trace)
+            
             if vision_model:
                 callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
                 try:
                     # 使用新的PDF图片上下文包装函数
-                    enhanced_figures_data = pdf_vision_figure_parser_figure_data_wraper(
+                    original_figures_data = pdf_vision_figure_parser_figure_data_wraper(
                         figures, sections, min_context_chars=kwargs.get("min_context_chars", 800)
                     )
                     pdf_vision_parser = VisionFigureParser(
                         vision_model=vision_model, 
-                        figures_data=enhanced_figures_data, 
+                        figures_data=original_figures_data, 
                         **kwargs
                     )
                     boosted_figures = pdf_vision_parser(callback=callback)
                     # 将增强后的图片数据单独保留
                     figures = boosted_figures
+                    
+                    # 追踪PDF图像增强结果，传递原始和增强后的数据
+                    _trace_figure_enhancement_to_langfuse(original_figures_data, figures, main_trace)
+                    
                 except Exception as e:
                     logging.error(f"Vision model error during figure enhancement: {e}")
                     callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
@@ -503,11 +972,28 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
             sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
                                           callback=callback)
+            
+            # 追踪 PDF sections 和 tables 内容（非DeepDOC模式）
+            _trace_sections_and_tables_to_langfuse(sections, tables, main_trace)
+            
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 为Excel分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="excel_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "excel_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for Excel: {e}")
+        
         excel_parser = ExcelParser()
         if parser_config.get("html4excel"):
             sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
@@ -516,6 +1002,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 为文本文件分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="text_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "text_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for text file: {e}")
+        
         sections = TxtParser()(filename, binary,
                                parser_config.get("chunk_token_num", 128),
                                parser_config.get("delimiter", "\n!?;。；！？"))
@@ -523,8 +1022,24 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 为Markdown分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="markdown_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "markdown_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for Markdown: {e}")
+        
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
         sections, tables = markdown_parser(filename, binary)
+
+        # 追踪 Markdown sections 和 tables 内容
+        _trace_sections_and_tables_to_langfuse(sections, tables, main_trace)
 
         # Process images for each section
         section_images = []
@@ -542,12 +1057,38 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 为HTML分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="html_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "html_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for HTML: {e}")
+        
         sections = HtmlParser()(filename, binary)
         sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.json$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 为JSON分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="json_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "json_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for JSON: {e}")
+        
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = JsonParser(chunk_token_num)(binary)
         sections = [(_, "") for _ in sections if _]
@@ -555,6 +1096,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        
+        # 为DOC分析创建主 trace
+        try:
+            langfuse_client = LangfuseUtils.get_client(kwargs.get("tenant_id"))
+            main_trace = LangfuseUtils.create_trace(
+                langfuse_client,
+                name="doc_document_analysis", 
+                input_data={"filename": filename},
+                metadata={"type": "doc_analysis", "document": filename}
+            )
+        except Exception as e:
+            logging.warning(f"Failed to create main trace for DOC: {e}")
+        
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         if doc_parsed.get('content', None) is not None:
@@ -581,8 +1135,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                         int(parser_config.get(
                                             "chunk_token_num", 128)), parser_config.get(
                                             "delimiter", "\n!?。；！？"))
+        
+        # 追踪 sections 合并成 chunks 的过程（带图片）
+        _trace_chunks_merging_to_langfuse(sections, chunks, images, parser_config, main_trace)
+        
         if kwargs.get("section_only", False):
-            return tokenize_chunks(chunks, doc, is_english, pdf_parser)
+            final_result = tokenize_chunks(chunks, doc, is_english, pdf_parser)
+            # 更新主 trace 的最终结果（对于PDF等其他文件类型）
+            if main_trace:
+                LangfuseUtils.update_trace(main_trace, {
+                    "section_only": True,
+                    "final_chunks_count": len(final_result),
+                    "analysis_complete": True,
+                    "processing_time_seconds": timer() - start_time
+                })
+            return final_result
 
         res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
     else:
@@ -590,10 +1157,31 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             sections, int(parser_config.get(
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))
+        
+        # 追踪 sections 合并成 chunks 的过程（无图片）
+        _trace_chunks_merging_to_langfuse(sections, chunks, None, parser_config, main_trace)
+        
         if kwargs.get("section_only", False):
-            return tokenize_chunks(chunks, doc, is_english, pdf_parser)
+            final_result = tokenize_chunks(chunks, doc, is_english, pdf_parser)
+            # 更新主 trace 的最终结果（对于PDF等其他文件类型）
+            if main_trace:
+                LangfuseUtils.update_trace(main_trace, {
+                    "section_only": True,
+                    "final_chunks_count": len(final_result),
+                    "analysis_complete": True,
+                    "processing_time_seconds": timer() - start_time
+                })
+            return final_result
 
         res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+
+    # 更新主 trace 的最终结果（对于PDF等其他文件类型）
+    if main_trace:
+        LangfuseUtils.update_trace(main_trace, {
+            "final_chunks_count": len(res),
+            "analysis_complete": True,
+            "processing_time_seconds": timer() - start_time
+        })
 
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
     return res

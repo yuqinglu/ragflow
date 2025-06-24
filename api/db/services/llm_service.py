@@ -221,7 +221,8 @@ class LLMBundle:
                 langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
                 if langfuse.auth_check():
                     self.langfuse = langfuse
-                    self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
+                    if self.llm_type != LLMType.EMBEDDING.value: # embedding 不需要 trace
+                        self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
                 else:
                     self.langfuse = None
             except Exception as e:
@@ -237,35 +238,17 @@ class LLMBundle:
         self.mdl.bind_tools(toolcall_session, tools)
 
     def encode(self, texts: list):
-        generation = None
-        if self.langfuse:
-            try:
-                generation = self.trace.generation(name="encode", model=self.llm_name, input={"texts": texts})
-            except Exception as e:
-                logging.warning(f"Failed to create Langfuse generation for encode: {e}")
-
         embeddings, used_tokens = self.mdl.encode(texts)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
-        if generation:
-            try:
-                generation.end(usage_details={"total_tokens": used_tokens})
-            except Exception as e:
-                logging.warning(f"Failed to end Langfuse generation for encode: {e}")
 
         return embeddings, used_tokens
 
     def encode_queries(self, query: str):
-        if self.langfuse:
-            generation = self.trace.generation(name="encode_queries", model=self.llm_name, input={"query": query})
-
         emd, used_tokens = self.mdl.encode_queries(query)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
-
-        if self.langfuse:
-            generation.end(usage_details={"total_tokens": used_tokens})
 
         return emd, used_tokens
 

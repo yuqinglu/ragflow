@@ -25,6 +25,17 @@ except Exception as e:
     logging.error(f"配置加载失败: {str(e)}")
     raise RuntimeError("系统配置初始化失败")
 
+def _create_trace_span(main_trace, name, input_data=None, output_data=None):
+    """通用的trace span创建函数"""
+    if not main_trace:
+        return None
+    try:
+        from api.utils.langfuse_utils import create_span_with_langfuse
+        return create_span_with_langfuse(main_trace, name, input_data, output_data)
+    except Exception as e:
+        logging.warning(f"Failed to create span {name}: {e}")
+        return None
+
 def process_image_urls(chunks):
     """处理chunks中的图片URL，为包含image的chunk生成带有时效性的访问URL"""
     for chunk in chunks:
@@ -66,6 +77,32 @@ def chunks_retrieval():
     kb_ids = CONFIG['kb_ids']
     embed_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_model_name)
 
+    # 初始化langfuse trace
+    main_trace = None
+    try:
+        from api.utils.langfuse_utils import LangfuseUtils
+        langfuse_client = LangfuseUtils.get_client(tenant_id)
+        main_trace = LangfuseUtils.create_trace(
+            langfuse_client,
+            name="document_search",
+            input_data={
+                "query": query,
+                "kb_ids": kb_ids,
+                "tenant_id": tenant_id,
+                "top_k": top_k,
+                "similarity_threshold": similarity_threshold,
+                "vector_similarity_weight": vector_similarity_weight,
+                "embedding_model": embedding_model_name
+            },
+            metadata={
+                "type": "document_search", 
+                "kb_count": len(kb_ids),
+                "endpoint": "/chunks/retrieval"
+            }
+        )
+    except Exception as e:
+        logging.warning(f"Failed to create main trace: {e}")
+
     chunks_res = settings.retrievaler.retrieval(
         query,
         embed_mdl,
@@ -75,8 +112,25 @@ def chunks_retrieval():
         top_k,
         similarity_threshold,
         vector_similarity_weight,
-        1024
+        1024,
+        main_trace=main_trace
     )
+
+    # 完成trace记录
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "search_complete": True,
+                "final_results": {
+                    "total": chunks_res.get("total", 0),
+                    "returned_chunks": len(chunks_res.get("chunks", [])),
+                    "doc_aggs_count": len(chunks_res.get("doc_aggs", [])),
+                    "has_results": len(chunks_res.get("chunks", [])) > 0
+                }
+            })
+        except Exception as e:
+            logging.warning(f"Failed to finalize trace: {e}")
 
     remove_keys = ['positions', 'vector', 'content_ltks']
     for c in chunks_res["chunks"]:
@@ -85,6 +139,20 @@ def chunks_retrieval():
     
     # 处理图片URL
     chunks_res["chunks"] = process_image_urls(chunks_res["chunks"])
+    
+    # 将最终返回的 chunks 结果添加到 main_trace 中
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "final_chunks_data": {
+                    "chunks": chunks_res.get("chunks", [])[:10],  # 前10个chunks
+                    "total_chunks_count": len(chunks_res.get("chunks", []))  # 总数
+                }
+            })
+        except Exception as e:
+            logging.warning(f"Failed to add chunks data to trace: {e}")
+    
     return jsonify(chunks_res)
 
 @manager.route('/knowledgegraph/retrieval', methods=['POST'])
@@ -96,13 +164,80 @@ def knowledegraph_retrieval():
     kb_ids = CONFIG['kb_ids']
     embed_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_model_name)
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
+    
+    # 初始化langfuse trace
+    main_trace = None
+    try:
+        from api.utils.langfuse_utils import LangfuseUtils
+        langfuse_client = LangfuseUtils.get_client(tenant_id)
+        main_trace = LangfuseUtils.create_trace(
+            langfuse_client,
+            name="knowledge_graph_retrieval",
+            input_data={
+                "query": query,
+                "kb_ids": kb_ids,
+                "tenant_id": tenant_id,
+                "embedding_model": embedding_model_name
+            },
+            metadata={
+                "type": "knowledge_graph_retrieval", 
+                "kb_count": len(kb_ids),
+                "endpoint": "/knowledgegraph/retrieval"
+            }
+        )
+    except Exception as e:
+        logging.warning(f"Failed to create main trace: {e}")
+    
+    # 跟踪知识图谱检索开始
+    _create_trace_span(
+        main_trace, "kg_retrieval_start",
+        input_data={
+            "query": query,
+            "query_length": len(query),
+            "kb_ids": kb_ids,
+            "embedding_model": embedding_model_name
+        }
+    )
+    
     kbinfos = settings.kg_retrievaler.structure_retrieval(
         query,
         tenant_id,
         kb_ids,
         embed_mdl,
         chat_mdl,
+        main_trace=main_trace
     )
+    
+    # 跟踪知识图谱检索完成
+    _create_trace_span(
+        main_trace, "kg_retrieval_complete",
+        input_data={
+            "query": query
+        },
+        output_data={
+            "entities_count": len(kbinfos.get("entities", [])) if kbinfos else 0,
+            "relations_count": len(kbinfos.get("relations", [])) if kbinfos else 0,
+            "chunks_count": len(kbinfos.get("chunks", [])) if kbinfos else 0,
+            "has_results": bool(kbinfos and (kbinfos.get("entities") or kbinfos.get("relations") or kbinfos.get("chunks")))
+        }
+    )
+    
+    # 完成trace记录
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "kg_retrieval_complete": True,
+                "final_results": {
+                    "entities_count": len(kbinfos.get("entities", [])) if kbinfos else 0,
+                    "relations_count": len(kbinfos.get("relations", [])) if kbinfos else 0,
+                    "chunks_count": len(kbinfos.get("chunks", [])) if kbinfos else 0,
+                    "has_results": bool(kbinfos and (kbinfos.get("entities") or kbinfos.get("relations") or kbinfos.get("chunks")))
+                }
+            })
+        except Exception as e:
+            logging.warning(f"Failed to finalize trace: {e}")
+    
     return jsonify(kbinfos)
 
 @manager.route('/multiturn/chunks/retrieval', methods=['POST'])
@@ -120,13 +255,105 @@ def multiturn_chunks_retrieval():
     kb_ids = CONFIG['kb_ids']
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     assert history[-1]["role"] == "user", "The last content of this conversation is not from user."
+    
+    # 初始化langfuse trace
+    main_trace = None
+    try:
+        from api.utils.langfuse_utils import LangfuseUtils
+        langfuse_client = LangfuseUtils.get_client(tenant_id)
+        main_trace = LangfuseUtils.create_trace(
+            langfuse_client,
+            name="multiturn_document_search",
+            input_data={
+                "original_history": history,
+                "refine_multiturn": refine_multiturn,
+                "kb_ids": kb_ids,
+                "tenant_id": tenant_id,
+                "top_k": top_k,
+                "similarity_threshold": similarity_threshold,
+                "vector_similarity_weight": vector_similarity_weight,
+                "embedding_model": embedding_model_name
+            },
+            metadata={
+                "type": "multiturn_document_search", 
+                "kb_count": len(kb_ids),
+                "endpoint": "/multiturn/chunks/retrieval",
+                "history_length": len(history)
+            }
+        )
+    except Exception as e:
+        logging.warning(f"Failed to create main trace: {e}")
+    
+    # 跟踪问题提取过程
     questions = [m["content"] for m in history if m["role"] == "user"][-3:]
+    original_questions = questions.copy()
+    
+    _create_trace_span(
+        main_trace, "extract_user_questions",
+        input_data={
+            "history_length": len(history),
+            "total_user_messages": len([m for m in history if m["role"] == "user"]),
+            "extracted_questions": original_questions,
+            "questions_count": len(original_questions)
+        }
+    )
+    
+    # 跟踪问题精炼过程
     if len(questions) > 1 and refine_multiturn:
+        _create_trace_span(
+            main_trace, "question_refinement_start",
+            input_data={
+                "refine_multiturn": refine_multiturn,
+                "original_questions": original_questions,
+                "will_use_llm": True,
+                "llm_id": llm_id
+            }
+        )
+        
         questions = [full_question(tenant_id, llm_id, history)]
+        
+        _create_trace_span(
+            main_trace, "question_refinement_complete",
+            input_data={
+                "original_questions": original_questions,
+                "refined_question": questions[0]
+            },
+            output_data={
+                "refinement_applied": True,
+                "original_question_count": len(original_questions),
+                "final_question": questions[0],
+                "question_length_change": len(questions[0]) - sum(len(q) for q in original_questions)
+            }
+        )
     else:
         questions = questions[-1:]
+        _create_trace_span(
+            main_trace, "question_refinement_complete",
+            input_data={
+                "refine_multiturn": refine_multiturn,
+                "original_questions": original_questions,
+                "will_use_llm": False
+            },
+            output_data={
+                "refinement_applied": False,
+                "final_question": questions[0],
+                "reason": "single_question_or_refinement_disabled"
+            }
+        )
+    
     refined_question = questions[-1]
     logging.info(f"Refine question is : {refined_question}")
+
+    # 更新trace中的refined_question
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "refined_question": refined_question
+            })
+        except Exception as e:
+            logging.warning(f"Failed to update trace with refined question: {e}")
+
     chunks_res = settings.retrievaler.retrieval(
         refined_question,
         embed_mdl,
@@ -136,8 +363,26 @@ def multiturn_chunks_retrieval():
         top_k,
         similarity_threshold,
         vector_similarity_weight,
-        1024
+        1024,
+        main_trace=main_trace
     )
+
+    # 完成trace记录
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "search_complete": True,
+                "final_results": {
+                    "total": chunks_res.get("total", 0),
+                    "returned_chunks": len(chunks_res.get("chunks", [])),
+                    "doc_aggs_count": len(chunks_res.get("doc_aggs", [])),
+                    "has_results": len(chunks_res.get("chunks", [])) > 0
+                }
+            })
+        except Exception as e:
+            logging.warning(f"Failed to finalize trace: {e}")
+
     remove_keys = ['positions', 'vector', 'content_ltks']
     for c in chunks_res["chunks"]:
         for key in remove_keys:
@@ -145,6 +390,20 @@ def multiturn_chunks_retrieval():
     
     # 处理图片URL
     #chunks_res["chunks"] = process_image_urls(chunks_res["chunks"])
+    
+    # 将最终返回的 chunks 结果添加到 main_trace 中
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "final_chunks_data": {
+                    "chunks": chunks_res.get("chunks", [])[:10],  # 前10个chunks
+                    "total_chunks_count": len(chunks_res.get("chunks", []))  # 总数
+                }
+            })
+        except Exception as e:
+            logging.warning(f"Failed to add chunks data to trace: {e}")
+    
     return jsonify(chunks_res)
 
 @manager.route('/multiturn/kg/retrieval', methods=['POST'])
@@ -159,20 +418,152 @@ def multiturn_kg_retrieval():
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     kb_ids = CONFIG['kb_ids']
     assert history[-1]["role"] == "user", "The last content of this conversation is not from user."
+    
+    # 初始化langfuse trace
+    main_trace = None
+    try:
+        from api.utils.langfuse_utils import LangfuseUtils
+        langfuse_client = LangfuseUtils.get_client(tenant_id)
+        main_trace = LangfuseUtils.create_trace(
+            langfuse_client,
+            name="multiturn_knowledge_graph_retrieval",
+            input_data={
+                "original_history": history,
+                "refine_multiturn": refine_multiturn,
+                "kb_ids": kb_ids,
+                "tenant_id": tenant_id,
+                "embedding_model": embedding_model_name
+            },
+            metadata={
+                "type": "multiturn_knowledge_graph_retrieval", 
+                "kb_count": len(kb_ids),
+                "endpoint": "/multiturn/kg/retrieval",
+                "history_length": len(history)
+            }
+        )
+    except Exception as e:
+        logging.warning(f"Failed to create main trace: {e}")
+    
+    # 跟踪问题提取过程
     questions = [m["content"] for m in history if m["role"] == "user"][-3:]
+    original_questions = questions.copy()
+    
+    _create_trace_span(
+        main_trace, "extract_user_questions",
+        input_data={
+            "history_length": len(history),
+            "total_user_messages": len([m for m in history if m["role"] == "user"]),
+            "extracted_questions": original_questions,
+            "questions_count": len(original_questions)
+        }
+    )
+    
+    # 跟踪问题精炼过程
     if len(questions) > 1 and refine_multiturn:
+        _create_trace_span(
+            main_trace, "question_refinement_start",
+            input_data={
+                "refine_multiturn": refine_multiturn,
+                "original_questions": original_questions,
+                "will_use_llm": True,
+                "llm_id": llm_id
+            }
+        )
+        
         questions = [full_question(tenant_id, llm_id, history)]
+        
+        _create_trace_span(
+            main_trace, "question_refinement_complete",
+            input_data={
+                "original_questions": original_questions,
+                "refined_question": questions[0]
+            },
+            output_data={
+                "refinement_applied": True,
+                "original_question_count": len(original_questions),
+                "final_question": questions[0],
+                "question_length_change": len(questions[0]) - sum(len(q) for q in original_questions)
+            }
+        )
     else:
         questions = questions[-1:]
+        _create_trace_span(
+            main_trace, "question_refinement_complete",
+            input_data={
+                "refine_multiturn": refine_multiturn,
+                "original_questions": original_questions,
+                "will_use_llm": False
+            },
+            output_data={
+                "refinement_applied": False,
+                "final_question": questions[0],
+                "reason": "single_question_or_refinement_disabled"
+            }
+        )
+    
     refined_question = questions[-1]
     logging.info(f"Refine question is : {refined_question}")
+    
+    # 更新trace中的refined_question
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "refined_question": refined_question
+            })
+        except Exception as e:
+            logging.warning(f"Failed to update trace with refined question: {e}")
+    
+    # 跟踪知识图谱检索开始
+    _create_trace_span(
+        main_trace, "kg_retrieval_start",
+        input_data={
+            "refined_question": refined_question,
+            "query_length": len(refined_question),
+            "kb_ids": kb_ids,
+            "embedding_model": embedding_model_name
+        }
+    )
+    
     kbinfos = settings.kg_retrievaler.structure_retrieval(
         refined_question,
         tenant_id,
         kb_ids,
         embed_mdl,
         chat_mdl,
+        main_trace=main_trace
     )
+    
+    # 跟踪知识图谱检索完成
+    _create_trace_span(
+        main_trace, "kg_retrieval_complete",
+        input_data={
+            "refined_question": refined_question
+        },
+        output_data={
+            "entities_count": len(kbinfos.get("entities", [])) if kbinfos else 0,
+            "relations_count": len(kbinfos.get("relations", [])) if kbinfos else 0,
+            "chunks_count": len(kbinfos.get("chunks", [])) if kbinfos else 0,
+            "has_results": bool(kbinfos and (kbinfos.get("entities") or kbinfos.get("relations") or kbinfos.get("chunks")))
+        }
+    )
+    
+    # 完成trace记录
+    if main_trace:
+        try:
+            from api.utils.langfuse_utils import LangfuseUtils
+            LangfuseUtils.update_trace(main_trace, {
+                "kg_retrieval_complete": True,
+                "final_results": {
+                    "entities_count": len(kbinfos.get("entities", [])) if kbinfos else 0,
+                    "relations_count": len(kbinfos.get("relations", [])) if kbinfos else 0,
+                    "chunks_count": len(kbinfos.get("chunks", [])) if kbinfos else 0,
+                    "has_results": bool(kbinfos and (kbinfos.get("entities") or kbinfos.get("relations") or kbinfos.get("chunks")))
+                }
+            })
+        except Exception as e:
+            logging.warning(f"Failed to finalize trace: {e}")
+    
     return jsonify(kbinfos)
 
 @manager.route('/chunks/debug', methods=['POST'])

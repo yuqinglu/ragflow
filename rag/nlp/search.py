@@ -29,6 +29,18 @@ from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionE
 def index_name(uid): return f"ragflow_{uid}"
 
 
+def _create_trace_span(main_trace, name, input_data=None, output_data=None):
+    """通用的trace span创建函数"""
+    if not main_trace:
+        return None
+    try:
+        from api.utils.langfuse_utils import create_span_with_langfuse
+        return create_span_with_langfuse(main_trace, name, input_data, output_data)
+    except Exception as e:
+        logging.warning(f"Failed to create span {name}: {e}")
+        return None
+
+
 class Dealer:
     def __init__(self, dataStore: DocStoreConnection):
         self.qryr = query.FulltextQueryer()
@@ -70,8 +82,126 @@ class Dealer:
                kb_ids: list[str],
                emb_mdl=None,
                highlight=False,
-               rank_feature: dict | None = None
+               rank_feature: dict | None = None,
+               main_trace=None
                ):
+        
+
+        
+        def _trace_query_processing(qst, filters):
+            """跟踪查询处理过程"""
+            query_info = {
+                "question": qst,
+                "question_length": len(qst) if qst else 0,
+                "filters": {
+                    "filter_count": len(filters),
+                    "filter_keys": list(filters.keys()) if filters else [],
+                    "doc_id_filter": "doc_id" in filters if filters else False
+                }
+            }
+            
+            _create_trace_span(
+                main_trace, "query_processing",
+                input_data=query_info,
+                output_data=None
+            )
+        
+        def _trace_search_execution(search_type, match_exprs, result_total, res=None, retry_info=None):
+            """跟踪搜索执行过程"""
+            execution_info = {
+                "search_type": search_type,
+                "match_expressions_count": len(match_exprs) if match_exprs else 0,
+                "result_total": result_total,
+                "retry_info": retry_info
+            }
+            
+            # 提取res的详细信息
+            output_data = {"total_results": result_total}
+            if res is not None:
+                try:
+                    # 使用dataStore的标准方法获取结果数据
+                    chunk_ids = self.dataStore.getChunkIds(res)
+                    aggregations = self.dataStore.getAggregation(res, "docnm_kwd")
+                    
+                    # 获取字段数据（这是最重要的，包含了实际的搜索结果）
+                    fields_data = self.dataStore.getFields(res, src)
+                    
+                    res_data = {
+                        "db_type": self.dataStore.dbType() if hasattr(self.dataStore, 'dbType') else "unknown",
+                        "chunk_ids_count": len(chunk_ids),
+                        "chunk_ids_sample": chunk_ids[:10] if chunk_ids else [],
+                        "doc_aggregations_count": len(aggregations) if aggregations else 0,
+                        "doc_aggregations_sample": aggregations[:3] if aggregations else [],
+                        "fields_data_count": len(fields_data) if fields_data else 0
+                    }
+                    
+                    # 添加字段数据样本（限制数量和内容长度）
+                    if fields_data:
+                        # 定义需要排除的字段
+                        excluded_fields = {
+                            'q_1024_vec', 'content_ltks', 'position_int',
+                            'q_768_vec', 'q_512_vec', 'q_384_vec'
+                        }
+                        
+                        sample_fields = {}
+                        count = 0
+                        for chunk_id, chunk_data in fields_data.items():
+                            if count >= 10:  # 最多显示10个chunk的数据
+                                break
+                            
+                            # 清理和限制每个字段的内容长度，同时过滤不需要的字段
+                            cleaned_chunk = {}
+                            for field, value in chunk_data.items():
+                                # 跳过不需要的字段
+                                if field in excluded_fields:
+                                    continue
+                                # 跳过以q_开头且以_vec结尾的向量字段
+                                if field.startswith('q_') and field.endswith('_vec'):
+                                    continue
+                                
+                                if isinstance(value, str) and len(value) > 200:
+                                    cleaned_chunk[field] = value[:200] + "..."
+                                elif isinstance(value, list) and len(value) > 10:
+                                    cleaned_chunk[field] = value[:10] + ["..."]
+                                else:
+                                    cleaned_chunk[field] = value
+                            
+                            sample_fields[chunk_id] = cleaned_chunk
+                            count += 1
+                        
+                        res_data["fields_data_sample"] = sample_fields
+                        if len(fields_data) > 10:
+                            res_data["fields_data_truncated"] = f"Showing first 10 of {len(fields_data)} chunks"
+                    
+                    output_data["search_result_details"] = res_data
+                    
+                except Exception as e:
+                    output_data["search_result_error"] = f"Failed to extract res details: {str(e)}"
+            
+            _create_trace_span(
+                main_trace, "search_execution",
+                input_data=execution_info,
+                output_data=output_data
+            )
+        
+        def _trace_result_processing(total, ids_count, keywords_count, aggs_count):
+            """跟踪结果处理过程"""
+            result_info = {
+                "total_results": total,
+                "returned_ids_count": ids_count,
+                "keywords_count": keywords_count,
+                "aggregations_count": aggs_count
+            }
+            
+            _create_trace_span(
+                main_trace, "result_processing",
+                input_data=result_info,
+                output_data=result_info
+            )
+        
+
+        
+        # 原有的主流程逻辑开始
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
@@ -89,6 +219,10 @@ class Dealer:
 
         qst = req.get("question", "")
         q_vec = []
+        
+        # 跟踪查询处理
+        _trace_query_processing(qst, filters)
+        
         if not qst:
             if req.get("sort"):
                 orderBy.asc("page_num_int")
@@ -97,6 +231,10 @@ class Dealer:
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total = self.dataStore.getTotal(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
+            
+            # 跟踪搜索执行（无查询）
+            _trace_search_execution("no_query_sort", [], total, res)
+            
         else:
             highlightFields = ["content_ltks", "title_tks"] if highlight else []
             matchText, keywords = self.qryr.question(qst, min_match=0.3)
@@ -106,6 +244,10 @@ class Dealer:
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.getTotal(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
+                
+                # 跟踪搜索执行（仅文本）
+                _trace_search_execution("text_only", matchExprs, total, res)
+                
             else:
                 matchDense = self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
@@ -118,12 +260,17 @@ class Dealer:
                                             idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.getTotal(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
+                
+                # 跟踪搜索执行（混合搜索）
+                _trace_search_execution("hybrid_search", matchExprs, total, res)
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
+                    retry_info = {"reason": "empty_results", "action": "retry_with_lower_threshold"}
                     if filters.get("doc_id"):
                         res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.getTotal(res)
+                        retry_info["retry_type"] = "remove_match_constraints"
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
                         filters.pop("doc_id", None)
@@ -132,6 +279,10 @@ class Dealer:
                                                     orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                         total = self.dataStore.getTotal(res)
                         logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                        retry_info["retry_type"] = "lower_similarity_threshold"
+                    
+                    # 跟踪重试搜索
+                    _trace_search_execution("retry_search", matchExprs, total, res, retry_info)
 
             for k in keywords:
                 kwds.add(k)
@@ -147,7 +298,11 @@ class Dealer:
         keywords = list(kwds)
         highlight = self.dataStore.getHighlight(res, keywords, "content_with_weight")
         aggs = self.dataStore.getAggregation(res, "docnm_kwd")
-        return self.SearchResult(
+        
+        # 跟踪结果处理
+        _trace_result_processing(total, len(ids), len(keywords), len(aggs) if aggs else 0)
+        
+        result = self.SearchResult(
             total=total,
             ids=ids,
             query_vector=q_vec,
@@ -156,6 +311,8 @@ class Dealer:
             field=self.dataStore.getFields(res, src),
             keywords=keywords
         )
+        
+        return result
 
     @staticmethod
     def trans2floats(txt):
@@ -279,8 +436,21 @@ class Dealer:
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks",
-               rank_feature: dict | None = None
+               rank_feature: dict | None = None, main_trace=None
                ):
+        # 跟踪重排序开始
+        _create_trace_span(
+            main_trace, "rerank_start",
+            input_data={
+                "query": query,
+                "total_chunks": len(sres.ids),
+                "tkweight": tkweight,
+                "vtweight": vtweight,
+                "content_field": cfield,
+                "has_rank_feature": rank_feature is not None
+            }
+        )
+
         _, keywords = self.qryr.question(query)
         vector_size = len(sres.query_vector)
         vector_column = f"q_{vector_size}_vec"
@@ -314,11 +484,44 @@ class Dealer:
                                                         keywords,
                                                         ins_tw, tkweight, vtweight)
 
-        return sim + rank_fea, tksim, vtsim
+        final_sim = sim + rank_fea
+        
+        # 跟踪重排序完成
+        _create_trace_span(
+            main_trace, "rerank_complete",
+            input_data={
+                "keywords_count": len(keywords),
+                "embedding_dimension": len(ins_embd[0]) if ins_embd else 0
+            },
+            output_data={
+                "similarity_scores_range": {
+                    "min": float(np.min(final_sim)) if len(final_sim) > 0 else 0,
+                    "max": float(np.max(final_sim)) if len(final_sim) > 0 else 0,
+                    "mean": float(np.mean(final_sim)) if len(final_sim) > 0 else 0
+                },
+                "rerank_method": "hybrid_similarity"
+            }
+        )
+
+        return final_sim, tksim, vtsim
 
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
-                        rank_feature: dict | None = None):
+                        rank_feature: dict | None = None, main_trace=None):
+        # 跟踪模型重排序开始
+        _create_trace_span(
+            main_trace, "rerank_by_model_start",
+            input_data={
+                "query": query,
+                "total_chunks": len(sres.ids),
+                "tkweight": tkweight,
+                "vtweight": vtweight,
+                "content_field": cfield,
+                "has_rank_feature": rank_feature is not None,
+                "rerank_model": str(type(rerank_mdl).__name__) if rerank_mdl else None
+            }
+        )
+
         _, keywords = self.qryr.question(query)
 
         for i in sres.ids:
@@ -337,7 +540,33 @@ class Dealer:
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
-        return tkweight * (np.array(tksim)+rank_fea) + vtweight * vtsim, tksim, vtsim
+        final_sim = tkweight * (np.array(tksim)+rank_fea) + vtweight * vtsim
+        
+        # 跟踪模型重排序完成
+        _create_trace_span(
+            main_trace, "rerank_by_model_complete",
+            input_data={
+                "keywords_count": len(keywords),
+                "token_similarity_range": {
+                    "min": float(np.min(tksim)) if len(tksim) > 0 else 0,
+                    "max": float(np.max(tksim)) if len(tksim) > 0 else 0
+                },
+                "vector_similarity_range": {
+                    "min": float(np.min(vtsim)) if len(vtsim) > 0 else 0,
+                    "max": float(np.max(vtsim)) if len(vtsim) > 0 else 0
+                }
+            },
+            output_data={
+                "final_similarity_range": {
+                    "min": float(np.min(final_sim)) if len(final_sim) > 0 else 0,
+                    "max": float(np.max(final_sim)) if len(final_sim) > 0 else 0,
+                    "mean": float(np.mean(final_sim)) if len(final_sim) > 0 else 0
+                },
+                "rerank_method": "model_based"
+            }
+        )
+
+        return final_sim, tksim, vtsim
 
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd,
@@ -348,7 +577,7 @@ class Dealer:
     def retrieval(self, question, embd_mdl, tenant_ids, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True,
                   rerank_mdl=None, highlight=False,
-                  rank_feature: dict | None = {PAGERANK_FLD: 10}):
+                  rank_feature: dict | None = {PAGERANK_FLD: 10}, main_trace=None):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
@@ -367,19 +596,35 @@ class Dealer:
             tenant_ids = tenant_ids.split(",")
 
         sres = self.search(req, [index_name(tid) for tid in tenant_ids],
-                           kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
+                           kb_ids, embd_mdl, highlight, rank_feature=rank_feature, main_trace=main_trace)
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
                                                    sres, question, 1 - vector_similarity_weight,
                                                    vector_similarity_weight,
-                                                   rank_feature=rank_feature)
+                                                   rank_feature=rank_feature, main_trace=main_trace)
         else:
             sim, tsim, vsim = self.rerank(
                 sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-                rank_feature=rank_feature)
+                rank_feature=rank_feature, main_trace=main_trace)
         # Already paginated in search function
         idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+        
+        # 跟踪排序和分页
+        _create_trace_span(
+            main_trace, "result_sorting_and_pagination",
+            input_data={
+                "total_similarity_scores": len(sim),
+                "page": page,
+                "page_size": page_size,
+                "similarity_threshold": similarity_threshold,
+                "top_scores": [float(sim[i]) for i in idx[:min(5, len(idx))]]  # 前5个分数作为样本
+            },
+            output_data={
+                "selected_indices_count": len(idx),
+                "pagination_range": f"{(page - 1) * page_size}:{page * page_size}"
+            }
+        )
 
 
         dim = len(sres.query_vector)
