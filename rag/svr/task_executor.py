@@ -256,10 +256,6 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
-            # TODO：这里section_only可以先写死，后面增加配置
-            # cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
-            #                     to_page=task["to_page"], lang=task["language"], callback=progress_callback,
-            #                     kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"], section_only=True))
             cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
                                 to_page=task["to_page"], lang=task["language"], callback=progress_callback,
                                 kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"]))

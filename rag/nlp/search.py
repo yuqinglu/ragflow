@@ -183,25 +183,7 @@ class Dealer:
                 input_data=execution_info,
                 output_data=output_data
             )
-        
-        def _trace_result_processing(total, ids_count, keywords_count, aggs_count):
-            """跟踪结果处理过程"""
-            result_info = {
-                "total_results": total,
-                "returned_ids_count": ids_count,
-                "keywords_count": keywords_count,
-                "aggregations_count": aggs_count
-            }
-            
-            _create_trace_span(
-                main_trace, "result_processing",
-                input_data=result_info,
-                output_data=result_info
-            )
-        
 
-        
-        # 原有的主流程逻辑开始
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
@@ -298,9 +280,6 @@ class Dealer:
         keywords = list(kwds)
         highlight = self.dataStore.getHighlight(res, keywords, "content_with_weight")
         aggs = self.dataStore.getAggregation(res, "docnm_kwd")
-        
-        # 跟踪结果处理
-        _trace_result_processing(total, len(ids), len(keywords), len(aggs) if aggs else 0)
         
         result = self.SearchResult(
             total=total,
@@ -438,19 +417,6 @@ class Dealer:
                vtweight=0.7, cfield="content_ltks",
                rank_feature: dict | None = None, main_trace=None
                ):
-        # 跟踪重排序开始
-        _create_trace_span(
-            main_trace, "rerank_start",
-            input_data={
-                "query": query,
-                "total_chunks": len(sres.ids),
-                "tkweight": tkweight,
-                "vtweight": vtweight,
-                "content_field": cfield,
-                "has_rank_feature": rank_feature is not None
-            }
-        )
-
         _, keywords = self.qryr.question(query)
         vector_size = len(sres.query_vector)
         vector_column = f"q_{vector_size}_vec"
@@ -486,12 +452,16 @@ class Dealer:
 
         final_sim = sim + rank_fea
         
-        # 跟踪重排序完成
+        # 跟踪重排序
         _create_trace_span(
-            main_trace, "rerank_complete",
+            main_trace, "rerank",
             input_data={
-                "keywords_count": len(keywords),
-                "embedding_dimension": len(ins_embd[0]) if ins_embd else 0
+                "query": query,
+                "total_chunks": len(sres.ids),
+                "tkweight": tkweight,
+                "vtweight": vtweight,
+                "content_field": cfield,
+                "has_rank_feature": rank_feature is not None
             },
             output_data={
                 "similarity_scores_range": {
@@ -508,20 +478,6 @@ class Dealer:
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
                         rank_feature: dict | None = None, main_trace=None):
-        # 跟踪模型重排序开始
-        _create_trace_span(
-            main_trace, "rerank_by_model_start",
-            input_data={
-                "query": query,
-                "total_chunks": len(sres.ids),
-                "tkweight": tkweight,
-                "vtweight": vtweight,
-                "content_field": cfield,
-                "has_rank_feature": rank_feature is not None,
-                "rerank_model": str(type(rerank_mdl).__name__) if rerank_mdl else None
-            }
-        )
-
         _, keywords = self.qryr.question(query)
 
         for i in sres.ids:
@@ -542,19 +498,17 @@ class Dealer:
 
         final_sim = tkweight * (np.array(tksim)+rank_fea) + vtweight * vtsim
         
-        # 跟踪模型重排序完成
+        # 跟踪模型重排序
         _create_trace_span(
-            main_trace, "rerank_by_model_complete",
+            main_trace, "rerank_by_model",
             input_data={
-                "keywords_count": len(keywords),
-                "token_similarity_range": {
-                    "min": float(np.min(tksim)) if len(tksim) > 0 else 0,
-                    "max": float(np.max(tksim)) if len(tksim) > 0 else 0
-                },
-                "vector_similarity_range": {
-                    "min": float(np.min(vtsim)) if len(vtsim) > 0 else 0,
-                    "max": float(np.max(vtsim)) if len(vtsim) > 0 else 0
-                }
+                "query": query,
+                "total_chunks": len(sres.ids),
+                "tkweight": tkweight,
+                "vtweight": vtweight,
+                "content_field": cfield,
+                "has_rank_feature": rank_feature is not None,
+                "rerank_model": str(type(rerank_mdl).__name__) if rerank_mdl else None
             },
             output_data={
                 "final_similarity_range": {
