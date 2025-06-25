@@ -332,12 +332,7 @@ class KGSearch(Dealer):
                 return
             try:
                 from api.utils.langfuse_utils import LangfuseUtils
-                span_data = {}
-                if input_data:
-                    span_data.update(input_data)
-                if output_data:
-                    span_data.update(output_data)
-                LangfuseUtils.create_span(main_trace, name, span_data)
+                LangfuseUtils.create_span(main_trace, name, input_data, output_data)
             except Exception as e:
                 logging.warning(f"Failed to create trace span {name}: {e}")
         
@@ -349,17 +344,6 @@ class KGSearch(Dealer):
         idxnms = [index_name(tid) for tid in tenant_ids]
         ty_kwds = []
         
-        # 跟踪查询重写开始
-        _create_trace_span(
-            main_trace, "query_rewrite_start",
-            input_data={
-                "original_question": qst,
-                "question_length": len(qst),
-                "tenant_ids": tenant_ids,
-                "kb_ids": kb_ids
-            }
-        )
-        
         logging.info("开始调用大模型获取图谱中需要查询的类型和实体关键字")
         try:
             ty_kwds, ents = self.query_rewrite(llm, qst, [index_name(tid) for tid in tenant_ids], kb_ids)
@@ -369,11 +353,14 @@ class KGSearch(Dealer):
             ents = [qst]
             pass
 
-        # 跟踪查询重写完成
+        # 跟踪查询重写
         _create_trace_span(
-            main_trace, "query_rewrite_complete",
+            main_trace, "query_rewrite",
             input_data={
-                "original_question": qst
+                "original_question": qst,
+                "question_length": len(qst),
+                "tenant_ids": tenant_ids,
+                "kb_ids": kb_ids
             },
             output_data={
                 "extracted_types": ty_kwds,
@@ -386,60 +373,22 @@ class KGSearch(Dealer):
 
         logging.info(f"通过大模型获取到需要再图谱中查询的类型和实体关键字")
         
-        # 跟踪实体检索开始
+        ents_from_query = self.get_relevant_ents_by_keywords(ents, filters, idxnms, kb_ids, emb_mdl, ent_sim_threshold)
+        ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnms, kb_ids, 10000)
+
+        # 跟踪实体检索
         _create_trace_span(
-            main_trace, "entity_retrieval_start",
+            main_trace, "entity_retrieval",
             input_data={
                 "entities_to_search": ents,
                 "types_to_search": ty_kwds,
-                "ent_sim_threshold": ent_sim_threshold,
-                "ent_topn": ent_topn
-            }
-        )
-        
-        ents_from_query = self.get_relevant_ents_by_keywords(ents, filters, idxnms, kb_ids, emb_mdl, ent_sim_threshold)
-        ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnms, kb_ids, 10000)
-        
-        # 添加对特定类型实体的检索
-        special_types = ["MICROCOURSE", "COURSE", "COURSEPACKAGE"]
-        special_ents = {}
-        
-        # 合并所有特殊类型的查询
-        type_filters = deepcopy(filters)
-        type_filters["entity_type_kwd"] = special_types  # 直接使用列表进行或查询
-        
-        #基于查询文本进行相似度检索
-        matchDense = self.get_vector(qst, emb_mdl, 1024, 0.1)
-        es_res = self.dataStore.search(
-            ["content_with_weight", "entity_kwd", "rank_flt", "_score", "entity_type_kwd"],
-            [], type_filters, [matchDense], OrderByExpr(), 0, ent_topn, idxnms, kb_ids
-        )
-        type_ents = self._ent_info_from_(es_res, ent_sim_threshold)
-        special_ents.update(type_ents)
-
-        # 跟踪实体检索完成
-        _create_trace_span(
-            main_trace, "entity_retrieval_complete",
+                "ent_sim_threshold": ent_sim_threshold
+            },
             output_data={
                 "entities_from_query_count": len(ents_from_query),
                 "entities_from_types_count": len(ents_from_types),
-                "special_entities_count": len(special_ents),
-                "total_entities_found": len(ents_from_query) + len(special_ents),
-                "entities_from_query": list(ents_from_query.keys())[:10],  # 限制数量避免过大
-                "entities_from_types": list(ents_from_types.keys())[:10],
-                "special_entities": list(special_ents.keys())[:10]
-            }
-        )
-
-        logging.info(f"After update Retrieved microcourse are {special_ents}")
-        
-        # 跟踪关系检索开始
-        _create_trace_span(
-            main_trace, "relation_retrieval_start",
-            input_data={
-                "question": qst,
-                "rel_sim_threshold": rel_sim_threshold,
-                "rel_topn": rel_topn
+                "entities_from_query": list(ents_from_query.keys()),
+                "entities_from_types": list(ents_from_types.keys())
             }
         )
         
@@ -461,14 +410,19 @@ class KGSearch(Dealer):
                         nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
                     nhop_pathes[(f, t)]["pagerank"] = wts[i]
 
-        # 跟踪关系检索完成
+        # 跟踪关系检索
         _create_trace_span(
-            main_trace, "relation_retrieval_complete",
+            main_trace, "relation_retrieval",
+            input_data={
+                "question": qst,
+                "rel_sim_threshold": rel_sim_threshold,
+                "rel_topn": rel_topn
+            },
             output_data={
                 "relations_from_text_count": len(rels_from_txt),
                 "nhop_paths_count": len(nhop_pathes),
-                "relations_from_text": list(rels_from_txt.keys())[:10],
-                "nhop_paths": list(nhop_pathes.keys())[:10]
+                "relations_from_text": list(rels_from_txt.keys()),
+                "nhop_paths": list(nhop_pathes.keys())
             }
         )
 
@@ -477,40 +431,12 @@ class KGSearch(Dealer):
         logging.info("Retrieved entities from types({}): {}".format(ty_kwds, list(ents_from_types.keys())))
         logging.info("Retrieved N-hops: {}".format(list(nhop_pathes.keys())))
         
-        # 跟踪实体合并和加权开始
-        _create_trace_span(
-            main_trace, "entity_merging_start",
-            input_data={
-                "entities_from_query_before": len(ents_from_query),
-                "special_entities": len(special_ents),
-                "entities_from_types": len(ents_from_types)
-            }
-        )
-        
         # P(E|Q) => P(E) * P(Q|E) => pagerank * sim
         for ent in ents_from_types.keys():
             if ent not in ents_from_query:
                 continue
             ents_from_query[ent]["sim"] *= 2
 
-        # 智能合并特殊实体，避免覆盖已有实体的加权结果
-        special_entity_names = set(special_ents.keys())  # 保存特殊实体名称供排序使用
-        for ent_name, ent_info in special_ents.items():
-            if ent_name in ents_from_query:
-                # 如果实体已存在，取较高的相似度分数，保留所有信息
-                existing_score = ents_from_query[ent_name]["sim"] * ents_from_query[ent_name]["pagerank"]
-                new_score = ent_info["sim"] * ent_info["pagerank"]
-                if new_score > existing_score:
-                    ents_from_query[ent_name] = ent_info
-                # 为特殊类型实体额外加权
-                ents_from_query[ent_name]["sim"] *= 1.5
-            else:
-                # 新实体直接添加，并给予特殊类型加权
-                ent_info["sim"] *= 1.5
-                ents_from_query[ent_name] = ent_info
-        
-        logging.info(f"After merging special entities, total entities: {len(ents_from_query)}")
-        
         for (f, t) in rels_from_txt.keys():
             pair = tuple(sorted([f, t]))
             s = 0
@@ -521,9 +447,6 @@ class KGSearch(Dealer):
                 s += 1
             if t in ents_from_types:
                 s += 1
-            # 检查是否涉及特殊实体
-            if f in special_ents or t in special_ents:
-                s += 1
             rels_from_txt[(f, t)]["sim"] *= s + 1
 
         # This is for the relations from n-hop but not by query search
@@ -533,51 +456,18 @@ class KGSearch(Dealer):
                 s += 1
             if t in ents_from_types:
                 s += 1
-            # 检查是否涉及特殊实体
-            if f in special_ents or t in special_ents:
-                s += 1
             rels_from_txt[(f, t)] = {
                 "sim": nhop_pathes[(f, t)]["sim"] * (s + 1),
                 "pagerank": nhop_pathes[(f, t)]["pagerank"]
             }
 
-        # 跟踪实体合并完成
-        _create_trace_span(
-            main_trace, "entity_merging_complete",
-            output_data={
-                "final_entities_count": len(ents_from_query),
-                "special_entity_names": len(special_entity_names),
-                "final_relations_count": len(rels_from_txt),
-                "entities_with_type_boost": len([e for e in ents_from_query.keys() if e in ents_from_types]),
-                "entities_with_special_boost": len([e for e in ents_from_query.keys() if e in special_entity_names])
-            }
-        )
-
         logging.info(f"ents_from_query before sorted: {ents_from_query}")
-        
-        # 跟踪排序开始
-        _create_trace_span(
-            main_trace, "ranking_start",
-            input_data={
-                "entities_to_rank": len(ents_from_query),
-                "relations_to_rank": len(rels_from_txt),
-                "ent_topn": ent_topn,
-                "rel_topn": rel_topn
-            }
-        )
         
         # 改进排序算法：使用加权组合而非简单乘积
         def calculate_entity_score(ent_name, ent_info):
             sim = ent_info["sim"]
             pagerank = ent_info["pagerank"]
-            
-            # 对于特殊实体，使用更友好的排序策略
-            if ent_name in special_entity_names:
-                # 特殊实体：相似度权重更高，PageRank权重适中
-                return 0.7 * sim + 0.3 * pagerank
-            else:
-                # 普通实体：平衡相似度和PageRank
-                return 0.6 * sim + 0.4 * pagerank
+            return 0.6 * sim + 0.4 * pagerank
         
         # 使用新的排序算法
         ents_from_query = sorted(ents_from_query.items(), 
@@ -589,9 +479,15 @@ class KGSearch(Dealer):
                               key=lambda x: 0.6 * x[1]["sim"] + 0.4 * x[1]["pagerank"], 
                               reverse=True)[:rel_topn]
 
-        # 跟踪排序完成
+        # 跟踪排序
         _create_trace_span(
-            main_trace, "ranking_complete",
+            main_trace, "ranking",
+            input_data={
+                "entities_to_rank": len(ents_from_query),
+                "relations_to_rank": len(rels_from_txt),
+                "ent_topn": ent_topn,
+                "rel_topn": rel_topn
+            },
             output_data={
                 "final_entities_selected": len(ents_from_query),
                 "final_relations_selected": len(rels_from_txt),
@@ -600,26 +496,12 @@ class KGSearch(Dealer):
             }
         )
 
-        # 跟踪图谱构建开始
-        _create_trace_span(
-            main_trace, "graph_construction_start",
-            input_data={
-                "entities_to_process": len(ents_from_query),
-                "relations_to_process": len(rels_from_txt),
-                "max_token": max_token
-            }
-        )
-
         ents = []
         relas = []
         logging.info(f"ents_from_query after sorted: {ents_from_query}")
         for n, ent in ents_from_query:
             dsc_json = json.loads(ent["description"])
-            # 计算实际用于排序的分数
-            if n in special_entity_names:
-                actual_score = 0.7 * ent["sim"] + 0.3 * ent["pagerank"]
-            else:
-                actual_score = 0.6 * ent["sim"] + 0.4 * ent["pagerank"]
+            actual_score = 0.6 * ent["sim"] + 0.4 * ent["pagerank"]
             
             ents.append({
                 "Entity": n,
@@ -672,19 +554,6 @@ class KGSearch(Dealer):
 
         graph = {"nodes": ents, "edges": relas}
         graph_res = {"graph": graph}
-        
-        # 跟踪图谱构建完成
-        _create_trace_span(
-            main_trace, "graph_construction_complete",
-            output_data={
-                "final_nodes_count": len(ents),
-                "final_edges_count": len(relas),
-                "nodes_with_special_type": len([e for e in ents if e["Type"] != "Normal"]),
-                "avg_entity_score": sum(float(e["Score"]) for e in ents) / len(ents) if ents else 0,
-                "avg_relation_score": sum(float(r["Score"]) for r in relas) / len(relas) if relas else 0,
-                "token_usage_efficient": max_token > 0
-            }
-        )
         
         return graph_res
 
