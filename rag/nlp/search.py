@@ -415,7 +415,7 @@ class Dealer:
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks",
-               rank_feature: dict | None = None, main_trace=None
+               rank_feature: dict | None = None
                ):
         _, keywords = self.qryr.question(query)
         vector_size = len(sres.query_vector)
@@ -451,33 +451,12 @@ class Dealer:
                                                         ins_tw, tkweight, vtweight)
 
         final_sim = sim + rank_fea
-        
-        # 跟踪重排序
-        _create_trace_span(
-            main_trace, "rerank",
-            input_data={
-                "query": query,
-                "total_chunks": len(sres.ids),
-                "tkweight": tkweight,
-                "vtweight": vtweight,
-                "content_field": cfield,
-                "has_rank_feature": rank_feature is not None
-            },
-            output_data={
-                "similarity_scores_range": {
-                    "min": float(np.min(final_sim)) if len(final_sim) > 0 else 0,
-                    "max": float(np.max(final_sim)) if len(final_sim) > 0 else 0,
-                    "mean": float(np.mean(final_sim)) if len(final_sim) > 0 else 0
-                },
-                "rerank_method": "hybrid_similarity"
-            }
-        )
 
         return final_sim, tksim, vtsim
 
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
-                        rank_feature: dict | None = None, main_trace=None):
+                        rank_feature: dict | None = None):
         _, keywords = self.qryr.question(query)
 
         for i in sres.ids:
@@ -497,28 +476,6 @@ class Dealer:
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
         final_sim = tkweight * (np.array(tksim)+rank_fea) + vtweight * vtsim
-        
-        # 跟踪模型重排序
-        _create_trace_span(
-            main_trace, "rerank_by_model",
-            input_data={
-                "query": query,
-                "total_chunks": len(sres.ids),
-                "tkweight": tkweight,
-                "vtweight": vtweight,
-                "content_field": cfield,
-                "has_rank_feature": rank_feature is not None,
-                "rerank_model": str(type(rerank_mdl).__name__) if rerank_mdl else None
-            },
-            output_data={
-                "final_similarity_range": {
-                    "min": float(np.min(final_sim)) if len(final_sim) > 0 else 0,
-                    "max": float(np.max(final_sim)) if len(final_sim) > 0 else 0,
-                    "mean": float(np.mean(final_sim)) if len(final_sim) > 0 else 0
-                },
-                "rerank_method": "model_based"
-            }
-        )
 
         return final_sim, tksim, vtsim
 
@@ -556,30 +513,13 @@ class Dealer:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
                                                    sres, question, 1 - vector_similarity_weight,
                                                    vector_similarity_weight,
-                                                   rank_feature=rank_feature, main_trace=main_trace)
+                                                   rank_feature=rank_feature)
         else:
             sim, tsim, vsim = self.rerank(
                 sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-                rank_feature=rank_feature, main_trace=main_trace)
+                rank_feature=rank_feature)
         # Already paginated in search function
         idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
-        
-        # 跟踪排序和分页
-        _create_trace_span(
-            main_trace, "result_sorting_and_pagination",
-            input_data={
-                "total_similarity_scores": len(sim),
-                "page": page,
-                "page_size": page_size,
-                "similarity_threshold": similarity_threshold,
-                "top_scores": [float(sim[i]) for i in idx[:min(5, len(idx))]]  # 前5个分数作为样本
-            },
-            output_data={
-                "selected_indices_count": len(idx),
-                "pagination_range": f"{(page - 1) * page_size}:{page * page_size}"
-            }
-        )
-
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
@@ -637,6 +577,32 @@ class Dealer:
                                                        v in sorted(ranks["doc_aggs"].items(),
                                                                    key=lambda x: x[1]["count"] * -1)]
         ranks["chunks"] = ranks["chunks"][:page_size]
+        
+        # 跟踪重排序和结果构建
+        _create_trace_span(
+            main_trace, "rerank_and_result_construction",
+            input_data={
+                "question": question,
+                "total_search_results": len(sres.ids) if sres else 0,
+                "rerank_method": "model_based" if rerank_mdl and sres.total > 0 else "hybrid_similarity",
+                "vector_similarity_weight": vector_similarity_weight,
+                "page": page,
+                "page_size": page_size,
+                "similarity_threshold": similarity_threshold,
+                "use_rerank_model": rerank_mdl is not None and sres.total > 0
+            },
+            output_data={
+                "total_results": ranks["total"],
+                "returned_chunks_count": len(ranks["chunks"]),
+                "doc_aggregations_count": len(ranks["doc_aggs"]),
+                "similarity_scores_range": {
+                    "min": float(np.min(sim)) if len(sim) > 0 else 0,
+                    "max": float(np.max(sim)) if len(sim) > 0 else 0,
+                    "mean": float(np.mean(sim)) if len(sim) > 0 else 0
+                },
+                "final_chunks": ranks["chunks"]  # 存储最终输出结果
+            }
+        )
         return ranks
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
