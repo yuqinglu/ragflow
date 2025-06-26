@@ -3,6 +3,7 @@ from flask import request
 from api import settings
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.services.figure_service import FigureService
 from api.utils.api_utils import get_json_result
 from rag.prompts import full_question
 from rag.nlp import search
@@ -565,6 +566,146 @@ def multiturn_kg_retrieval():
             logging.warning(f"Failed to finalize trace: {e}")
     
     return jsonify(kbinfos)
+
+@manager.route('/figures', methods=['GET'])
+@manager.route('/figures/page/<int:page>', methods=['GET'])
+@manager.route('/figures/page/<int:page>/size/<int:page_size>', methods=['GET'])
+def get_figures(page=1, page_size=20):
+    """
+    查询figure表中的图片数据
+    路径参数:
+    - page: 页码，默认为1
+    - page_size: 每页数量，默认为20
+    
+    支持的路径格式:
+    - /figures - 查询所有，使用默认分页
+    - /figures/page/2 - 指定页码
+    - /figures/page/2/size/10 - 指定页码和每页数量
+    """
+    try:
+        # 从配置获取kb_ids
+        kb_ids = CONFIG['kb_ids']
+        
+        # 计算偏移量
+        offset = (page - 1) * page_size
+        
+        # 构建查询条件
+        query_conditions = [FigureService.model.kb_id.in_(kb_ids)]
+        
+        # 执行查询
+        figures_query = FigureService.model.select().where(*query_conditions)
+            
+        # 获取总数
+        total = figures_query.count()
+        
+        # 分页查询
+        figures = figures_query.order_by(FigureService.model.create_time.desc()).offset(offset).limit(page_size)
+        
+        # 转换为字典并生成预签名URL
+        figure_list = []
+        for figure in figures:
+            figure_dict = figure.to_dict()
+            
+            # 生成预签名URL - 使用现有的逻辑
+            if figure_dict.get('img_id'):
+                try:
+                    bucket, filename = figure_dict['img_id'].split('-', 1)
+                    response_headers = None
+                    response_headers = {
+                        'response-content-disposition': f'attachment; filename="{filename}.jpg"'
+                    }
+                    presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24), response_headers=response_headers)
+                    if presigned_url:
+                        figure_dict['image_url'] = presigned_url
+                except Exception as e:
+                    logging.error(f"生成图片URL失败: {str(e)}")
+            
+            # 移除不需要的字段
+            remove_keys = ['doc_id', 'kb_id', 'metadata', 'page_num', 'update_time', 'update_date']
+            for key in remove_keys:
+                figure_dict.pop(key, None)
+            
+            figure_list.append(figure_dict)
+        
+        return jsonify({
+            "code": 0,
+            "message": "success",
+            "data": {
+                "figures": figure_list,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"查询figures失败: {str(e)}")
+        return jsonify({
+            "code": 500,
+            "message": f"查询figures失败: {str(e)}",
+            "data": None
+        })
+
+@manager.route('/figures/<figure_id>', methods=['GET'])
+def get_figure_by_id(figure_id):
+    """
+    根据ID查询单个figure
+    """
+    try:
+        # 从配置获取kb_ids
+        kb_ids = CONFIG['kb_ids']
+        
+        figure = FigureService.get_by_id(figure_id)
+        if not figure[0]:
+            return jsonify({
+                "code": 404,
+                "message": "Figure not found",
+                "data": None
+            })
+        
+        figure_dict = figure[1].to_dict()
+        
+        # 检查figure是否属于配置的知识库
+        if figure_dict.get('kb_id') not in kb_ids:
+            return jsonify({
+                "code": 403,
+                "message": "Access denied: Figure not in configured knowledge bases",
+                "data": None
+            })
+        
+        # 生成预签名URL - 使用现有的逻辑
+        if figure_dict.get('img_id'):
+            try:
+                bucket, filename = figure_dict['img_id'].split('-', 1)
+                response_headers = None
+                response_headers = {
+                        'response-content-disposition': f'attachment; filename="{filename}.jpg"'
+                    }
+                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24), response_headers=response_headers)
+                if presigned_url:
+                    figure_dict['image_url'] = presigned_url
+            except Exception as e:
+                logging.error(f"生成图片URL失败: {str(e)}")
+        
+        # 移除不需要的字段
+        remove_keys = ['doc_id', 'kb_id', 'metadata', 'page_num', 'update_time', 'update_date']
+        for key in remove_keys:
+            figure_dict.pop(key, None)
+        
+        return jsonify({
+            "code": 0,
+            "message": "success",
+            "data": figure_dict
+        })
+        
+    except Exception as e:
+        logging.error(f"查询figure失败: {str(e)}")
+        return jsonify({
+            "code": 500,
+            "message": f"查询figure失败: {str(e)}",
+            "data": None
+        })
 
 @manager.route('/chunks/debug', methods=['POST'])
 def chunks_debug():
