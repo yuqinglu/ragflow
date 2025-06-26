@@ -304,7 +304,7 @@ class InfinityConnection(DocStoreConnection):
         """
         TODO: Infinity doesn't provide highlight
         """
-        logging.info(f"selectFields: {selectFields}\n hightlightFields: {highlightFields}\n condition: {condition}\n matchExprs: {matchExprs}\n orderBy: {orderBy}\n offset: {offset}\n limit: {limit}\n indexNames: {indexNames}\n knowledgebaseIds: {knowledgebaseIds}\n aggFields: {aggFields}\n rank_feature: {rank_feature}")
+        logging.debug(f"selectFields: {selectFields}\n hightlightFields: {highlightFields}\n condition: {condition}\n matchExprs: {matchExprs}\n orderBy: {orderBy}\n offset: {offset}\n limit: {limit}\n indexNames: {indexNames}\n knowledgebaseIds: {knowledgebaseIds}\n aggFields: {aggFields}\n rank_feature: {rank_feature}")
         if isinstance(indexNames, str):
             indexNames = indexNames.split(",")
         assert isinstance(indexNames, list) and len(indexNames) > 0
@@ -343,7 +343,7 @@ class InfinityConnection(DocStoreConnection):
             for indexName in indexNames:
                 table_name = f"{indexName}_{knowledgebaseIds[0]}"
                 filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
-                logging.info(f"filter_cond: {filter_cond}")
+                logging.debug(f"filter_cond: {filter_cond}")
                 break
 
         for matchExpr in matchExprs:
@@ -361,10 +361,12 @@ class InfinityConnection(DocStoreConnection):
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
-                logger.info(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
-                if filter_fulltext and "filter" not in matchExpr.extra_options:
-                    matchExpr.extra_options.update({"filter": filter_fulltext})
+                # if filter_fulltext and "filter" not in matchExpr.extra_options:
+                #     matchExpr.extra_options.update({"filter": filter_fulltext})
+                if filter_cond and "filter" not in matchExpr.extra_options:
+                    matchExpr.extra_options.update({"filter": filter_cond})
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
@@ -372,9 +374,9 @@ class InfinityConnection(DocStoreConnection):
                 if similarity:
                     matchExpr.extra_options["threshold"] = similarity
                     del matchExpr.extra_options["similarity"]
-                logger.info(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, FusionExpr):
-                logger.info(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
         if orderBy.fields:
@@ -396,8 +398,6 @@ class InfinityConnection(DocStoreConnection):
                 table_list.append(table_name)
                 logging.info(f"output is {output}")
                 builder = table_instance.output(output)
-                if len(filter_cond) > 0:
-                    builder = builder.filter(filter_cond)
                 if len(matchExprs) > 0:
                     for matchExpr in matchExprs:
                         if isinstance(matchExpr, MatchTextExpr):
@@ -423,17 +423,17 @@ class InfinityConnection(DocStoreConnection):
                             )
                 else:
                     if len(filter_cond) > 0:
-                        builder.filter(filter_cond)
+                        builder = builder.filter(filter_cond)
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
                 builder.offset(offset).limit(limit)
                 kb_res, extra_result = builder.option({"total_hits_count": True}).to_df()
                 if not kb_res.empty:
                     for column in kb_res.columns:
-                        logging.info(f"column: {column}, value: {kb_res.iloc[0][column]}")
+                        logging.debug(f"column: {column}, value: {kb_res.iloc[0][column]}")
                 if extra_result:
                     total_hits_count += int(extra_result["total_hits_count"])
-                logger.info(f"INFINITY search table: {str(table_name)}, result: {str(kb_res)}")
+                logger.debug(f"INFINITY search table: {str(table_name)}, result: {str(kb_res)}")
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, output)
@@ -441,7 +441,7 @@ class InfinityConnection(DocStoreConnection):
             res['Sum'] = res[score_column] + res[PAGERANK_FLD]
             res = res.sort_values(by='Sum', ascending=False).reset_index(drop=True).drop(columns=['Sum'])
             res = res.head(limit)
-        logger.info(f"INFINITY search final result: {str(res)}")
+        logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
 
     def get(
