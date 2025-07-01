@@ -390,7 +390,7 @@ def multiturn_chunks_retrieval():
             c.pop(key, None)
     
     # 处理图片URL
-    #chunks_res["chunks"] = process_image_urls(chunks_res["chunks"])
+    chunks_res["chunks"] = process_image_urls(chunks_res["chunks"])
     
     # 将最终返回的 chunks 结果添加到 main_trace 中
     if main_trace:
