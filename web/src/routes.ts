@@ -145,6 +145,11 @@ const routes = [
     layout: false,
   },
   {
+    path: '/figure-review',
+    component: '@/pages/figure-review',
+    layout: false,
+  },
+  {
     path: '/*',
     component: '@/pages/404',
     layout: false,
