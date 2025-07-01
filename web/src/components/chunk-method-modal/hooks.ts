@@ -84,6 +84,7 @@ const ParserListMap = new Map([
   ],
   [['json'], [DocumentParserType.Naive, DocumentParserType.KnowledgeGraph]],
   [['eml'], [DocumentParserType.Email]],
+  [['mp4'], [DocumentParserType.Video]],
 ]);
 
 const getParserList = (

@@ -24,6 +24,7 @@ import { QAConfiguration } from './qa';
 import { ResumeConfiguration } from './resume';
 import { TableConfiguration } from './table';
 import { TagConfiguration } from './tag';
+import { VideoConfiguration } from './video';
 
 import styles from '../index.less';
 
@@ -40,6 +41,7 @@ const ConfigurationComponentMap = {
   [DocumentParserType.Picture]: PictureConfiguration,
   [DocumentParserType.One]: OneConfiguration,
   [DocumentParserType.Audio]: AudioConfiguration,
+  [DocumentParserType.Video]: VideoConfiguration,
   [DocumentParserType.Email]: EmailConfiguration,
   [DocumentParserType.Tag]: TagConfiguration,
   [DocumentParserType.KnowledgeGraph]: KnowledgeGraphConfiguration,

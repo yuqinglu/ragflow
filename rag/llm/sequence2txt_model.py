@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import logging
 import requests
 from openai.lib.azure import AzureOpenAI
 import io
@@ -59,23 +60,73 @@ class QWenSeq2txt(Base):
         dashscope.api_key = key
         self.model_name = model_name
 
-    def transcription(self, audio, format):
+    def transcription(self, audio, format="wav", **kwargs):
         from http import HTTPStatus
         from dashscope.audio.asr import Recognition
+        import tempfile
+        import os
+        
+        # 统一音频数据处理：支持字符串路径、二进制数据、文件对象
+        temp_file_created = False
+        
+        if isinstance(audio, str):
+            # 字符串路径：直接使用
+            audio_file_path = audio
+        else:
+            # 非字符串：创建临时文件
+            temp_fd, audio_file_path = tempfile.mkstemp(suffix=f'.{format}')
+            temp_file_created = True
+            
+            try:
+                with os.fdopen(temp_fd, 'wb') as temp_file:
+                    if isinstance(audio, bytes):
+                        # 二进制数据：直接写入
+                        temp_file.write(audio)
+                    elif hasattr(audio, 'read'):
+                        # 文件对象：读取后写入
+                        if hasattr(audio, 'seek'):
+                            audio.seek(0)  # 确保从文件开头读取
+                        temp_file.write(audio.read())
+                    elif hasattr(audio, 'getvalue'):
+                        # BytesIO对象：获取值后写入
+                        temp_file.write(audio.getvalue())
+                    else:
+                        raise ValueError(f"Unsupported audio type: {type(audio)}. "
+                                       f"Expected str (file path), bytes, or file-like object.")
+            except Exception as e:
+                if os.path.exists(audio_file_path):
+                    os.unlink(audio_file_path)
+                raise ValueError(f"Failed to process audio data: {e}")
+        
+        try:
+            recognition = Recognition(model=self.model_name,
+                                      format=format,
+                                      sample_rate=16000,
+                                      callback=None)
+            result = recognition.call(audio_file_path)
+            ans = ""
+            if result.status_code == HTTPStatus.OK:
+                for sentence in result.get_sentence():
+                    # 统一文本处理：处理不同的返回类型
+                    text = sentence['text']
+                    ans += text + '\n'
+                
+                final_text = ans.strip()
+                return final_text, num_tokens_from_string(final_text)
 
-        recognition = Recognition(model=self.model_name,
-                                  format=format,
-                                  sample_rate=16000,
-                                  callback=None)
-        result = recognition.call(audio)
-
-        ans = ""
-        if result.status_code == HTTPStatus.OK:
-            for sentence in result.get_sentence():
-                ans += sentence.text.decode('utf-8') + '\n'
-            return ans, num_tokens_from_string(ans)
-
-        return "**ERROR**: " + result.message, 0
+            # 统一错误处理
+            error_msg = getattr(result, 'message', 'Unknown error')
+            if not isinstance(error_msg, str):
+                error_msg = str(error_msg)
+            return f"**ERROR**: {error_msg}", 0
+            
+        finally:
+            # 自动清理临时文件
+            if temp_file_created and os.path.exists(audio_file_path):
+                try:
+                    os.unlink(audio_file_path)
+                except Exception as cleanup_error:
+                    logging.warning(f"Failed to remove temporary audio file {audio_file_path}: {cleanup_error}")
 
 
 class AzureSeq2txt(Base):

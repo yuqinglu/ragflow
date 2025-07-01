@@ -146,7 +146,11 @@ def web_crawl():
             "thumbnail": thumbnail(filename, blob),
         }
         if doc["type"] == FileType.VISUAL:
-            doc["parser_id"] = ParserType.PICTURE.value
+            # 检查是否为视频文件
+            if re.search(r"\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|mpg|mpeg|3gp)$", filename, re.IGNORECASE):
+                doc["parser_id"] = ParserType.VIDEO.value
+            else:
+                doc["parser_id"] = ParserType.PICTURE.value
         if doc["type"] == FileType.AURAL:
             doc["parser_id"] = ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
@@ -483,8 +487,17 @@ def change_parser():
             else:
                 return get_json_result(data=True)
 
-        if (doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation"):
-            return get_data_error_result(message="Not supported yet!")
+        # 检查parser和文件类型的兼容性
+        if doc.type == FileType.VISUAL:
+            # 视频文件应该使用video parser，图片文件使用picture parser
+            if re.search(r"\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|mpg|mpeg|3gp)$", doc.name, re.IGNORECASE):
+                if req["parser_id"] != "video":
+                    return get_data_error_result(message="Video files should use video parser!")
+            else:
+                if req["parser_id"] != "picture":
+                    return get_data_error_result(message="Image files should use picture parser!")
+        elif re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation":
+            return get_data_error_result(message="Presentation files should use presentation parser!")
 
         e = DocumentService.update_by_id(doc.id, {"parser_id": req["parser_id"], "progress": 0, "progress_msg": "", "run": TaskStatus.UNSTART.value})
         if not e:

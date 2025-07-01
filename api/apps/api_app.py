@@ -447,7 +447,11 @@ def upload():
             if request.form.get("parser_id").strip() in list(vars(ParserType).values())[1:-3]:
                 doc["parser_id"] = request.form.get("parser_id").strip()
         if doc["type"] == FileType.VISUAL:
-            doc["parser_id"] = ParserType.PICTURE.value
+            # 检查是否为视频文件
+            if re.search(r"\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|mpg|mpeg|3gp)$", filename, re.IGNORECASE):
+                doc["parser_id"] = ParserType.VIDEO.value
+            else:
+                doc["parser_id"] = ParserType.PICTURE.value
         if doc["type"] == FileType.AURAL:
             doc["parser_id"] = ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):

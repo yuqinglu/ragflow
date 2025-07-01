@@ -573,7 +573,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     from api.db.services.file_service import FileService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService
-    from rag.app import audio, email, naive, picture, presentation
+    from rag.app import audio, email, naive, picture, presentation, video
 
     e, conv = ConversationService.get_by_id(conversation_id)
     if not e:
@@ -601,7 +601,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         ParserType.PRESENTATION.value: presentation,
         ParserType.PICTURE.value: picture,
         ParserType.AUDIO.value: audio,
-        ParserType.EMAIL.value: email
+        ParserType.EMAIL.value: email,
+        ParserType.VIDEO.value: video
     }
     parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
     exe = ThreadPoolExecutor(max_workers=12)

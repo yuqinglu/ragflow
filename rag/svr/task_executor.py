@@ -57,7 +57,7 @@ from api import settings
 from api.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
-    email, tag
+    email, tag, video
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
@@ -82,6 +82,7 @@ FACTORY = {
     ParserType.PICTURE.value: picture,
     ParserType.ONE.value: one,
     ParserType.AUDIO.value: audio,
+    ParserType.VIDEO.value: video,
     ParserType.EMAIL.value: email,
     ParserType.KG.value: naive,
     ParserType.TAG.value: tag
@@ -234,7 +235,7 @@ async def build_chunks(task, progress_callback):
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
                                               (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
-
+    logging.info(f"parser_id is {task['parser_id']}")
     chunker = FACTORY[task["parser_id"].lower()]
     try:
         st = timer()
@@ -320,7 +321,7 @@ async def build_chunks(task, progress_callback):
 
     for i in range(len(docs)):
         d = docs[i]
-        if d.pop("table_type", None) == 'figure':
+        if d.pop("table_type", None) == 'figure' or d.pop("doc_type_kwd", None) == 'video_frame':
             # 保存到figure表
             figure_doc = {
                 "id": d["id"],
@@ -328,7 +329,7 @@ async def build_chunks(task, progress_callback):
                 "file_name": d["docnm_kwd"],
                 "content": d["content_with_weight"],
                 "img_id": "{}-{}".format(task["kb_id"], d['id']),
-                "page_num": d["page_num_int"][0],
+                "page_num": d["page_num_int"][0] if "page_num_int" in d and d["page_num_int"] else 0,
                 "kb_id": task["kb_id"]
             }
             FigureService.insert(**figure_doc)

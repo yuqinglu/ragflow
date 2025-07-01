@@ -17,6 +17,7 @@ import { QAConfiguration } from './configuration/qa';
 import { ResumeConfiguration } from './configuration/resume';
 import { TableConfiguration } from './configuration/table';
 import { TagConfiguration } from './configuration/tag';
+import { VideoConfiguration } from './configuration/video';
 
 const ConfigurationComponentMap = {
   [DocumentParserType.Naive]: NaiveConfiguration,
@@ -31,6 +32,7 @@ const ConfigurationComponentMap = {
   [DocumentParserType.Picture]: PictureConfiguration,
   [DocumentParserType.One]: OneConfiguration,
   [DocumentParserType.Audio]: AudioConfiguration,
+  [DocumentParserType.Video]: VideoConfiguration,
   [DocumentParserType.Email]: EmailConfiguration,
   [DocumentParserType.Tag]: TagConfiguration,
   [DocumentParserType.KnowledgeGraph]: KnowledgeGraphConfiguration,

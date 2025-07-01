@@ -379,6 +379,13 @@
                     "tags": "RE-RANK,4k",
                     "max_tokens": 4000,
                     "model_type": "rerank"
+                },
+                {
+                    "llm_name": "paraformer-realtime-8k-v1",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 26214400,
+                    "model_type": "speech2text",
+                    "is_tools": false
                 }
             ]
         },

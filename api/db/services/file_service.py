@@ -470,12 +470,18 @@ class FileService(CommonService):
 
     @staticmethod
     def parse_docs(file_objs, user_id):
-        from rag.app import audio, email, naive, picture, presentation
+        from rag.app import audio, email, naive, picture, presentation, video
 
         def dummy(prog=None, msg=""):
             pass
 
-        FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
+        FACTORY = {
+            ParserType.PRESENTATION.value: presentation, 
+            ParserType.PICTURE.value: picture, 
+            ParserType.AUDIO.value: audio, 
+            ParserType.EMAIL.value: email,
+            ParserType.VIDEO.value: video
+        }
         parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
         exe = ThreadPoolExecutor(max_workers=12)
         threads = []
@@ -494,6 +500,9 @@ class FileService(CommonService):
     @staticmethod
     def get_parser(doc_type, filename, default):
         if doc_type == FileType.VISUAL:
+            # 检查是否为视频文件
+            if re.search(r"\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|mpg|mpeg|3gp)$", filename, re.IGNORECASE):
+                return ParserType.VIDEO.value
             return ParserType.PICTURE.value
         if doc_type == FileType.AURAL:
             return ParserType.AUDIO.value

@@ -297,6 +297,7 @@ def update_doc(tenant_id, dataset_id, document_id):
             "laws",
             "presentation",
             "picture",
+            "video",
             "one",
             "knowledge_graph",
             "email",
@@ -309,8 +310,17 @@ def update_doc(tenant_id, dataset_id, document_id):
         if doc.parser_id.lower() == req["chunk_method"].lower():
             return get_result()
 
-        if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
-            return get_error_data_result(message="Not supported yet!")
+        # 检查parser和文件类型的兼容性
+        if doc.type == FileType.VISUAL:
+            # 视频文件应该使用video parser，图片文件使用picture parser
+            if re.search(r"\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|mpg|mpeg|3gp)$", doc.name, re.IGNORECASE):
+                if req["chunk_method"] != "video":
+                    return get_error_data_result(message="Video files should use video parser!")
+            else:
+                if req["chunk_method"] != "picture":
+                    return get_error_data_result(message="Image files should use picture parser!")
+        elif re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["chunk_method"] != "presentation":
+            return get_error_data_result(message="Presentation files should use presentation parser!")
 
         e = DocumentService.update_by_id(
             doc.id,

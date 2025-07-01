@@ -294,7 +294,8 @@ class LLMBundle:
     def transcription(self, audio):
         if self.langfuse:
             generation = self.trace.generation(name="transcription", metadata={"model": self.llm_name})
-
+        
+        logging.info("start transcription")
         txt, used_tokens = self.mdl.transcription(audio)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.transcription can't update token usage for {}/SEQUENCE2TXT used_tokens: {}".format(self.tenant_id, used_tokens))

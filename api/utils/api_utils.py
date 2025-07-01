@@ -362,6 +362,7 @@ def get_parser_config(chunk_method, parser_config):
         "knowledge_graph": {"chunk_token_num": 8192, "delimiter": r"\n", "entity_types": ["organization", "person", "location", "event", "time"]},
         "email": None,
         "picture": None,
+        "video": {"chunk_token_num": 1024, "max_keyframes": 5, "analyze_frames": False, "context_window": 30.0, "keyframe_strategy": "smart"},
     }
     parser_config = key_mapping[chunk_method]
     return parser_config

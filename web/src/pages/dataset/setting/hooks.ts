@@ -43,7 +43,7 @@ export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
 };
 
 // The value that does not need to be displayed in the analysis method Select
-const HiddenFields = ['email', 'picture', 'audio'];
+const HiddenFields = ['email', 'picture', 'audio', 'video'];
 
 export function useSelectChunkMethodList() {
   const parserList = useSelectParserList();

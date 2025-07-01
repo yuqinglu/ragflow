@@ -22,6 +22,7 @@ from .html_parser import RAGFlowHtmlParser as HtmlParser
 from .json_parser import RAGFlowJsonParser as JsonParser
 from .markdown_parser import RAGFlowMarkdownParser as MarkdownParser
 from .txt_parser import RAGFlowTxtParser as TxtParser
+from .video_parser import RAGFlowVideoParser as VideoParser
 
 __all__ = [
     "PdfParser",
@@ -33,4 +34,5 @@ __all__ = [
     "JsonParser",
     "MarkdownParser",
     "TxtParser",
+    "VideoParser",
 ]
