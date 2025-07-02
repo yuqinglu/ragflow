@@ -208,6 +208,7 @@ class LLMBundle:
         self.tenant_id = tenant_id
         self.llm_type = llm_type
         self.llm_name = llm_name
+        self._closed = False  # 添加关闭状态标记
         self.mdl = TenantLLMService.model_instance(tenant_id, llm_type, llm_name, lang=lang)
         assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, llm_type, llm_name)
         model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
@@ -231,13 +232,71 @@ class LLMBundle:
         else:
             self.langfuse = None
 
+    def __enter__(self):
+        """上下文管理器入口"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口，自动清理资源"""
+        self.close()
+        return False
+
+    def __del__(self):
+        """析构函数，对象被垃圾回收时自动清理资源"""
+        try:
+            self.close()
+        except Exception:
+            # 在析构函数中忽略所有异常，避免影响垃圾回收
+            pass
+
+    def close(self):
+        """显式关闭资源，释放HTTP连接和langfuse连接"""
+        if self._closed:
+            return
+        
+        try:
+            # 关闭底层HTTP客户端连接
+            if hasattr(self, 'mdl') and self.mdl:
+                if hasattr(self.mdl, 'client'):
+                    client = self.mdl.client
+                    # 对于OpenAI客户端，尝试关闭连接
+                    if hasattr(client, '_client'):
+                        try:
+                            client._client.close()
+                        except Exception:
+                            pass
+                    elif hasattr(client, 'close'):
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
+            
+            # 清理langfuse连接
+            if hasattr(self, 'langfuse') and self.langfuse:
+                try:
+                    if hasattr(self.langfuse, 'flush'):
+                        self.langfuse.flush()
+                except Exception:
+                    pass
+            
+            self._closed = True
+        except Exception as e:
+            logging.debug(f"Error closing LLMBundle resources: {e}")
+
+    def _check_closed(self):
+        """检查对象是否已关闭"""
+        if self._closed:
+            raise RuntimeError("LLMBundle has been closed")
+
     def bind_tools(self, toolcall_session, tools):
+        self._check_closed()
         if not self.is_tools:
             logging.warning(f"Model {self.llm_name} does not support tool call, but you have assigned one or more tools to it!")
             return
         self.mdl.bind_tools(toolcall_session, tools)
 
     def encode(self, texts: list):
+        self._check_closed()
         embeddings, used_tokens = self.mdl.encode(texts)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
@@ -246,6 +305,7 @@ class LLMBundle:
         return embeddings, used_tokens
 
     def encode_queries(self, query: str):
+        self._check_closed()
         emd, used_tokens = self.mdl.encode_queries(query)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
@@ -253,6 +313,7 @@ class LLMBundle:
         return emd, used_tokens
 
     def similarity(self, query: str, texts: list):
+        self._check_closed()
         if self.langfuse:
             generation = self.trace.generation(name="similarity", model=self.llm_name, input={"query": query, "texts": texts})
 
@@ -266,6 +327,7 @@ class LLMBundle:
         return sim, used_tokens
 
     def describe(self, image, max_tokens=300):
+        self._check_closed()
         if self.langfuse:
             generation = self.trace.generation(name="describe", metadata={"model": self.llm_name})
 
@@ -279,6 +341,7 @@ class LLMBundle:
         return txt
 
     def describe_with_prompt(self, image, prompt):
+        self._check_closed()
         if self.langfuse:
             generation = self.trace.generation(name="describe_with_prompt", metadata={"model": self.llm_name, "prompt": prompt})
 
@@ -292,6 +355,7 @@ class LLMBundle:
         return txt
 
     def transcription(self, audio):
+        self._check_closed()
         if self.langfuse:
             generation = self.trace.generation(name="transcription", metadata={"model": self.llm_name})
         
@@ -306,6 +370,7 @@ class LLMBundle:
         return txt
 
     def tts(self, text):
+        self._check_closed()
         if self.langfuse:
             span = self.trace.span(name="tts", input={"text": text})
 
@@ -334,6 +399,7 @@ class LLMBundle:
         return txt[last_think_end + len("</think>") :]
 
     def chat(self, system, history, gen_conf):
+        self._check_closed()
         if self.langfuse:
             generation = self.trace.generation(name="chat", model=self.llm_name, input={"system": system, "history": history})
 
@@ -353,6 +419,7 @@ class LLMBundle:
         return txt
 
     def chat_streamly(self, system, history, gen_conf):
+        self._check_closed()
         generation = None
         if self.langfuse:
             try:
