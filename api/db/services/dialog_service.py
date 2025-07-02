@@ -351,7 +351,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             return answer
 
         def decorate_answer(answer):
-            nonlocal knowledges, kbinfos, prompt, langfuse_trace
+            nonlocal knowledges, kbinfos, prompt, langfuse_trace, thought
             answer = repair_bad_citation_formats(answer, kbinfos, set())
             answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
@@ -377,7 +377,7 @@ def chat(dialog, messages, stream=True, **kwargs):
 
             logging.info(f'langfuse output: {langfuse_output}')
             logging.info(f'reference are {refs}')
-            return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+            return {"answer": answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
         # Create langfuse generation if tracer is available
         if langfuse_trace:
@@ -412,7 +412,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             answer = chat_mdl.chat(prompt + prompt4citation, msg[1:], gen_conf)
             user_content = msg[-1].get("content", "[content not available]")
             logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-            res = decorate_answer(answer)
+            res = decorate_answer(thought + answer)
             res["audio_binary"] = tts(tts_mdl, answer)
             yield res
     
