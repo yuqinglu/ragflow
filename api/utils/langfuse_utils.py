@@ -26,7 +26,7 @@ class LangfuseUtils:
     
     @staticmethod
     def get_client(tenant_id: str):
-        """获取租户的 Langfuse 客户端
+        """获取租户的 Langfuse 客户端（使用连接池）
         
         Args:
             tenant_id: 租户ID
@@ -35,30 +35,21 @@ class LangfuseUtils:
             Langfuse 客户端实例，如果配置不存在或连接失败则返回 None
         """
         try:
-            from langfuse import Langfuse
+            from api.utils.langfuse_pool import LangfuseConnectionPool
             
-            langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
-            if not langfuse_keys:
-                return None
-            
-            langfuse = Langfuse(
-                public_key=langfuse_keys.public_key,
-                secret_key=langfuse_keys.secret_key,
-                host=langfuse_keys.host
-            )
-            
-            # 验证连接
-            if langfuse.auth_check():
-                return langfuse
+            pool = LangfuseConnectionPool()
+            connection = pool.get_connection(tenant_id)
+            if connection:
+                return connection.client
             else:
-                logger.warning(f"Langfuse认证失败，租户ID: {tenant_id}")
+                logger.info(f"未找到租户 {tenant_id} 的Langfuse配置")
                 return None
                 
         except ImportError:
             logger.info("Langfuse包未安装，跳过追踪")
             return None
         except Exception as e:
-            logger.warning(f"初始化Langfuse客户端失败: {str(e)}")
+            logger.warning(f"从连接池获取Langfuse客户端失败: {str(e)}")
             return None
     
     @staticmethod
@@ -203,7 +194,8 @@ class LangfuseUtils:
 
 # 为了方便使用，提供简化的函数接口
 def get_langfuse_client(tenant_id: str):
-    """获取 Langfuse 客户端的简化接口"""
+    """获取 Langfuse 客户端的简化接口（推荐使用 get_langfuse_connection 上下文管理器）"""
+    logger.warning("get_langfuse_client 已弃用，推荐使用 api.utils.langfuse_pool.get_langfuse_connection")
     return LangfuseUtils.get_client(tenant_id)
 
 

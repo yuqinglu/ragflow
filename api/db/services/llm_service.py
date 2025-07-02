@@ -23,6 +23,7 @@ from api.db.db_models import DB, LLM, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.user_service import TenantService
+from api.utils.langfuse_pool import get_langfuse_connection
 from rag.llm import ChatModel, CvModel, EmbeddingModel, RerankModel, Seq2txtModel, TTSModel
 
 
@@ -216,21 +217,22 @@ class LLMBundle:
 
         self.is_tools = model_config.get("is_tools", False)
 
-        langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
-        if langfuse_keys:
-            try:
-                langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-                if langfuse.auth_check():
-                    self.langfuse = langfuse
-                    if self.llm_type != LLMType.EMBEDDING.value: # embedding 不需要 trace
-                        self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
-                else:
-                    self.langfuse = None
-            except Exception as e:
-                logging.warning(f"Failed to initialize Langfuse in LLMBundle: {e}")
+        # 使用连接池获取Langfuse连接
+        from api.utils.langfuse_pool import LangfuseConnectionPool
+        self.langfuse_connection = None
+        pool = LangfuseConnectionPool()
+        try:
+            self.langfuse_connection = pool.get_connection(tenant_id)
+            if self.langfuse_connection:
+                self.langfuse = self.langfuse_connection.client
+                if self.llm_type != LLMType.EMBEDDING.value: # embedding 不需要 trace
+                    self.trace = self.langfuse.trace(name=f"{self.llm_type}-{self.llm_name}")
+            else:
                 self.langfuse = None
-        else:
+        except Exception as e:
+            logging.warning(f"Failed to initialize Langfuse in LLMBundle: {e}")
             self.langfuse = None
+            self.langfuse_connection = None
 
     def __enter__(self):
         """上下文管理器入口"""
@@ -271,13 +273,15 @@ class LLMBundle:
                         except Exception:
                             pass
             
-            # 清理langfuse连接
-            if hasattr(self, 'langfuse') and self.langfuse:
-                try:
-                    if hasattr(self.langfuse, 'flush'):
-                        self.langfuse.flush()
-                except Exception:
-                    pass
+            # 释放Langfuse连接池连接
+            if hasattr(self, 'langfuse_connection') and self.langfuse_connection:
+                from api.utils.langfuse_pool import LangfuseConnectionPool
+                pool = LangfuseConnectionPool()
+                pool.release_connection(self.langfuse_connection)
+                self.langfuse_connection = None
+            
+            if hasattr(self, 'langfuse'):
+                self.langfuse = None
             
             self._closed = True
         except Exception as e:

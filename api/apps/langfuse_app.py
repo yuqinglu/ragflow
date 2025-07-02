@@ -22,6 +22,7 @@ from langfuse import Langfuse
 from api.db.db_models import DB
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.utils.api_utils import get_error_data_result, get_json_result, server_error_response, validate_request
+from api.utils.langfuse_pool import get_langfuse_connection
 
 
 @manager.route("/api_key", methods=["POST", "PUT"])  # noqa: F821
@@ -42,9 +43,20 @@ def set_api_key():
         host=host,
     )
 
+    # 验证Langfuse密钥（设置时需要直接验证，不能使用连接池）
     langfuse = Langfuse(public_key=langfuse_keys["public_key"], secret_key=langfuse_keys["secret_key"], host=langfuse_keys["host"])
-    if not langfuse.auth_check():
-        return get_error_data_result(message="Invalid Langfuse keys")
+    try:
+        if not langfuse.auth_check():
+            return get_error_data_result(message="Invalid Langfuse keys")
+    finally:
+        # 验证完成后立即关闭连接
+        try:
+            if hasattr(langfuse, 'flush'):
+                langfuse.flush()
+            if hasattr(langfuse, '_client') and hasattr(langfuse._client, 'close'):
+                langfuse._client.close()
+        except Exception:
+            pass
 
     langfuse_entry = TenantLangfuseService.filter_by_tenant(tenant_id=current_user.id)
     with DB.atomic():
@@ -66,17 +78,23 @@ def get_api_key():
     if not langfuse_entry:
         return get_json_result(message="Have not record any Langfuse keys.")
 
-    langfuse = Langfuse(public_key=langfuse_entry["public_key"], secret_key=langfuse_entry["secret_key"], host=langfuse_entry["host"])
+    # 使用连接池获取Langfuse连接
     try:
-        if not langfuse.auth_check():
-            return get_error_data_result(message="Invalid Langfuse keys loaded")
-    except langfuse.api.core.api_error.ApiError as api_err:
-        return get_json_result(message=f"Error from Langfuse: {api_err}")
-    except Exception as e:
-        server_error_response(e)
-
-    langfuse_entry["project_id"] = langfuse.api.projects.get().dict()["data"][0]["id"]
-    langfuse_entry["project_name"] = langfuse.api.projects.get().dict()["data"][0]["name"]
+        with get_langfuse_connection(current_user.id) as langfuse:
+            if not langfuse:
+                return get_error_data_result(message="Failed to get Langfuse connection")
+            
+            if not langfuse.auth_check():
+                return get_error_data_result(message="Invalid Langfuse keys loaded")
+            
+            langfuse_entry["project_id"] = langfuse.api.projects.get().dict()["data"][0]["id"]
+            langfuse_entry["project_name"] = langfuse.api.projects.get().dict()["data"][0]["name"]
+            
+    except Exception as api_err:
+        if "ApiError" in str(type(api_err)):
+            return get_json_result(message=f"Error from Langfuse: {api_err}")
+        else:
+            return server_error_response(api_err)
 
     return get_json_result(data=langfuse_entry)
 

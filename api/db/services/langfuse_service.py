@@ -87,37 +87,41 @@ class TenantLangfuseService(CommonService):
                     "details": "Please configure Langfuse keys first"
                 }
             
-            # 测试基本连接
+            # 使用连接池测试连接
             try:
-                langfuse = Langfuse(
-                    public_key=langfuse_keys.public_key, 
-                    secret_key=langfuse_keys.secret_key, 
-                    host=langfuse_keys.host
-                )
+                from api.utils.langfuse_pool import get_langfuse_connection
                 
-                # 测试认证
-                auth_result = langfuse.auth_check()
-                if not auth_result:
+                with get_langfuse_connection(tenant_id) as langfuse:
+                    if not langfuse:
+                        return {
+                            "success": False,
+                            "error": "Failed to get Langfuse connection from pool",
+                            "details": "Connection pool may not be properly initialized"
+                        }
+                    
+                    # 测试认证
+                    auth_result = langfuse.auth_check()
+                    if not auth_result:
+                        return {
+                            "success": False,
+                            "error": "Authentication failed",
+                            "details": "Please check your public key, secret key, and host configuration"
+                        }
+                    
+                    # 测试创建trace
+                    test_trace = langfuse.trace(name="test-connection")
+                    test_generation = test_trace.generation(
+                        name="test-generation",
+                        model="test-model",
+                        input={"test": "connection"}
+                    )
+                    test_generation.end(output={"result": "success"})
+                    
                     return {
-                        "success": False,
-                        "error": "Authentication failed",
-                        "details": "Please check your public key, secret key, and host configuration"
+                        "success": True,
+                        "message": "Langfuse connection test successful",
+                        "details": f"Connected to {langfuse_keys.host}"
                     }
-                
-                # 测试创建trace
-                test_trace = langfuse.trace(name="test-connection")
-                test_generation = test_trace.generation(
-                    name="test-generation",
-                    model="test-model",
-                    input={"test": "connection"}
-                )
-                test_generation.end(output={"result": "success"})
-                
-                return {
-                    "success": True,
-                    "message": "Langfuse connection test successful",
-                    "details": f"Connected to {langfuse_keys.host}"
-                }
                 
             except Exception as conn_error:
                 return {
