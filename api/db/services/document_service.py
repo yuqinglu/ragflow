@@ -535,7 +535,7 @@ class DocumentService(CommonService):
             return None
             
         if metadata.get('is_micro_course'):
-            return ParserType.MicroCourse
+            return ParserType.MICROCOURSE
             
         return None
 
