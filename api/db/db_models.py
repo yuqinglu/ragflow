@@ -809,6 +809,21 @@ class Figure(DataBaseModel):
     class Meta:
         db_table = "figure"
 
+class OperationalReport(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    kb_id = CharField(max_length=64, null=False, help_text="knowledge base id", index=True)
+    title = CharField(max_length=255, null=False, help_text="report title", index=True)
+    report_data = JSONField(null=False, default={}, help_text="report data in json format")
+    created_by = CharField(max_length=255, null=False, help_text="who created it", index=True)
+    group_id = CharField(max_length=255, null=True, help_text="group id for access control", index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    
+    def __str__(self):
+        return self.title
+    
+    class Meta:
+        db_table = "operational_report"
+
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:

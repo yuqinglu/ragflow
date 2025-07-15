@@ -195,7 +195,7 @@ class Dealer:
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                       "question_kwd", "question_tks", "doc_type_kwd", "create_time",
+                       "question_kwd", "question_tks", "doc_type_kwd", "create_time", "created_by", "group_id",
                        "available_int", "content_with_weight", "image_name", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
@@ -558,7 +558,9 @@ class Dealer:
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "page_num_int": chunk["page_num_int"],
-                "create_time": chunk["create_time"]
+                "create_time": chunk["create_time"],
+                "created_by": chunk.get("created_by", ""),
+                "group_id": chunk.get("group_id", "")
             }
             if "image_name" in chunk:
                 d["image_name"] = chunk["image_name"]

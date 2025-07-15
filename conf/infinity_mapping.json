@@ -41,5 +41,7 @@
 	"n_hop_with_weight": {"type": "varchar", "default": ""},
 	"removed_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 
-	"doc_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}
+	"doc_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"created_by": {"type": "varchar", "default": ""},
+	"group_id": {"type": "varchar", "default": ""}
 }
