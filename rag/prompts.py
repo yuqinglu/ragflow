@@ -234,6 +234,8 @@ Requirements:
 
 def full_question(tenant_id, llm_id, messages, language=None):
     from api.db.services.llm_service import LLMBundle
+    import datetime
+    import re
 
     if llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
@@ -248,64 +250,62 @@ def full_question(tenant_id, llm_id, messages, language=None):
     today = datetime.date.today().isoformat()
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
     tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
-    prompt = f"""
-Role: A helpful assistant
+    
+    # 获取用户最新的问题
+    last_user_message = None
+    for m in reversed(messages):
+        if m["role"] == "user":
+            last_user_message = m["content"]
+            break
+    
+    # 如果用户问题为空或太短，直接返回
+    if not last_user_message or len(last_user_message.strip()) < 2:
+        return last_user_message or ""
+    
+    prompt = (
+        f"""
+你是一个问题补全助手。你的任务是根据对话历史补全用户最新问题中缺失的上下文信息。
 
-Task and steps:
-    1. Generate a full user question that would follow the conversation.
-    2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
+**严格规则：**
+1. 只补全问题，绝对不要回答问题
+2. 如果用户问题已经完整清晰，直接返回原问题
+3. 只使用对话历史中的信息，不要使用外部知识
+4. 如果无法确定用户意图，返回原问题
+5. 输出格式：只输出补全后的问题，不要任何解释、标点或额外文本
+6. 补全后的问题长度不超过50字符
+7. 不要添加对话历史中未明确提到的信息
 
-Requirements & Restrictions:
-  - If the user's latest question is completely, don't do anything, just return the original question.
-  - DON'T generate anything except a refined question."""
-    if language:
-        prompt += f"""
-  - Text generated MUST be in {language}."""
-    else:
-        prompt += """
-  - Text generated MUST be in the same language of the original user's question.
-"""
-    prompt += f"""
+**日期转换参考：**
+- 当前日期：{today}
+- 昨天：{yesterday}
+- 明天：{tomorrow}
 
-######################
--Examples-
-######################
+**示例：**
+对话：用户：特朗普的父亲叫什么？助手：弗雷德·特朗普。用户：他的母亲呢？
+输出：特朗普的母亲叫什么？
 
-# Example 1
-## Conversation
-USER: What is the name of Donald Trump's father?
-ASSISTANT:  Fred Trump.
-USER: And his mother?
-###############
-Output: What's the name of Donald Trump's mother?
+对话：用户：伦敦今天天气怎么样？助手：多云。用户：罗切斯特明天怎么样？
+输出：罗切斯特明天天气怎么样？
 
-------------
-# Example 2
-## Conversation
-USER: What is the name of Donald Trump's father?
-ASSISTANT:  Fred Trump.
-USER: And his mother?
-ASSISTANT:  Mary Trump.
-User: What's her full name?
-###############
-Output: What's the full name of Donald Trump's mother Mary Trump?
+对话：用户：法国的首都是什么？助手：巴黎。用户：巴黎的人口是多少？
+输出：巴黎的人口是多少？
 
-------------
-# Example 3
-## Conversation
-USER: What's the weather today in London?
-ASSISTANT:  Cloudy.
-USER: What's about tomorrow in Rochester?
-###############
-Output: What's the weather in Rochester on {tomorrow}?
-
-######################
-# Real Data
-## Conversation
+**实际对话：**
 {conv}
-###############
-    """
-    ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
+
+**用户最新问题：** {last_user_message}
+
+**输出：**"""
+    )
+    
+    if language:
+        prompt += f"\n**语言要求：** 输出必须使用{language}。"
+    else:
+        prompt += "\n**语言要求：** 输出必须使用与用户原问题相同的语言。"
+    
+    ans = chat_mdl.chat(prompt, [{"role": "user", "content": "请输出补全后的问题："}], {"temperature": 0.01, "max_tokens": 100, "top_p": 0.01, "frequency_penalty": 0.1, "presence_penalty": 0.1})
+    
+    # 清理输出
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
