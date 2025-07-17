@@ -155,7 +155,7 @@ if __name__ == '__main__':
             }
             
             registration_ip = os.getenv('NACOS_REGISTRATION_IP', '')
-            logging.info(f"Registering to Nacos with IP: {registration_ip} (service listening on: {settings.HOST_IP})")
+            logging.info(f"Registering to Nacos with IP: {registration_ip}")
             
             success = register_ragflow_service(
                 host=registration_ip,
