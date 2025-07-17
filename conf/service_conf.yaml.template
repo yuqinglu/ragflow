@@ -1,18 +1,28 @@
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
+
+# Nacos服务注册配置
+nacos:
+  enabled: ${NACOS_ENABLED:-false}
+  server_addresses: ${NACOS_SERVER_ADDRESSES:-localhost:8848}
+  registration_ip: ${NACOS_REGISTRATION_IP:-}
+  # namespace: ${NACOS_NAMESPACE:-}
+  # username: ${NACOS_USERNAME:-}
+  # password: ${NACOS_PASSWORD:-}
+
 mysql:
   name: '${MYSQL_DBNAME:-rag_flow}'
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: 3306
-  max_connections: 100
-  stale_timeout: 30
+  port: ${MYSQL_PORT}:3306
+  max_connections: 900
+  stale_timeout: 300
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
-  host: '${MINIO_HOST:-minio}:9000'
+  host: '10.1.115.38:19000'
 es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'

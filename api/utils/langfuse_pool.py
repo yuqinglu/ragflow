@@ -89,7 +89,7 @@ class LangfuseConnectionPool:
         self._connections: Dict[str, LangfuseConnection] = {}
         self._pool_lock = threading.RLock()
         self._cleanup_interval = 300  # 5分钟清理一次
-        self._max_idle_time = 600     # 10分钟无使用自动关闭
+        self._max_idle_time = 600.0   # 10分钟无使用自动关闭，使用float类型
         self._last_cleanup = time.time()
         self._initialized = True
         

@@ -46,6 +46,15 @@ from api.utils import show_configs
 from rag.settings import print_rag_settings
 from rag.utils.redis_conn import RedisDistributedLock
 
+# 导入Nacos服务注册功能
+try:
+    from api.utils.nacos_client import register_ragflow_service, get_nacos_client
+    NACOS_ENABLED = True
+except ImportError:
+    NACOS_ENABLED = False
+    logging.warning("Nacos client not available, service discovery disabled")
+
+logging.info(f"Nacos enabled: {NACOS_ENABLED}")
 stop_event = threading.Event()
 
 RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get('RAGFLOW_DEBUGPY_LISTEN', "0"))
@@ -67,6 +76,19 @@ def update_progress():
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
+    
+    # 注销Nacos服务
+    if NACOS_ENABLED:
+        try:
+            nacos_client = get_nacos_client()
+            if nacos_client:
+                registration_ip = os.getenv('NACOS_REGISTRATION_IP', settings.HOST_IP)
+                nacos_client.deregister_ragflow_service("ragflow", registration_ip, settings.HOST_PORT)
+                logging.info("Deregistered RAGFlow service from Nacos")
+        except Exception as e:
+            logging.error(f"Error deregistering service from Nacos: {e}")
+    
+    
     stop_event.set()
     time.sleep(1)
     sys.exit(0)
@@ -121,6 +143,38 @@ if __name__ == '__main__':
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
 
     GlobalPluginManager.load_plugins()
+
+    # 注册服务到Nacos
+    if NACOS_ENABLED and os.getenv('NACOS_ENABLED', 'false').lower() == 'true':
+        try:
+            metadata = {
+                'version': get_ragflow_version(),
+                'environment': os.getenv('ENVIRONMENT', 'production'),
+                'service_type': 'ragflow',
+                'debug': RuntimeConfig.DEBUG
+            }
+            
+            registration_ip = os.getenv('NACOS_REGISTRATION_IP', '')
+            logging.info(f"Registering to Nacos with IP: {registration_ip} (service listening on: {settings.HOST_IP})")
+            
+            success = register_ragflow_service(
+                host=registration_ip,
+                port=settings.HOST_PORT,
+                metadata=metadata
+            )
+            
+            if success:
+                logging.info("Successfully registered RAGFlow service to Nacos")
+                # 启动心跳线程
+                nacos_client = get_nacos_client()
+                if nacos_client:
+                    registration_ip = os.getenv('NACOS_REGISTRATION_IP', '')
+                    nacos_client.start_heartbeat_thread("ragflow", registration_ip, settings.HOST_PORT)
+            else:
+                logging.warning("Failed to register RAGFlow service to Nacos")
+        except Exception as e:
+            logging.error(f"Error registering service to Nacos: {e}")
+
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

@@ -557,8 +557,8 @@ class Dealer:
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
-                "page_num_int": chunk["page_num_int"],
-                "create_time": chunk["create_time"],
+                "page_num_int": chunk.get("page_num_int", [1]),
+                "create_time": chunk.get("create_time", ""),
                 "created_by": chunk.get("created_by", ""),
                 "group_id": chunk.get("group_id", "")
             }

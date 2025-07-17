@@ -1,6 +1,12 @@
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+nacos:
+  enabled: true
+  server_addresses: 'mse-14722772-nacos-ans.mse.aliyuncs.com:8848'
+  # namespace: ${NACOS_NAMESPACE:-}
+  # username: ${NACOS_USERNAME:-}
+  # password: ${NACOS_PASSWORD:-}
 mysql:
   name: 'rag_flow'
   user: 'root'

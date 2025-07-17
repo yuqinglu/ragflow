@@ -302,18 +302,13 @@ class LLMBundle:
     def encode(self, texts: list):
         self._check_closed()
         embeddings, used_tokens = self.mdl.encode(texts)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
-
-
+        # embedding不需要进行token usage统计
         return embeddings, used_tokens
 
     def encode_queries(self, query: str):
         self._check_closed()
         emd, used_tokens = self.mdl.encode_queries(query)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
-            logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
-
+        # embedding不需要进行token usage统计
         return emd, used_tokens
 
     def similarity(self, query: str, texts: list):

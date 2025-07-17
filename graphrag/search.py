@@ -72,7 +72,6 @@ class KGSearch(Dealer):
         flds = ["content_with_weight", "_score", "SIMILARITY", "SCORE","entity_kwd", "rank_flt", "n_hop_with_weight"]
         es_res = self.dataStore.getFields(es_res, flds)
         for _, ent in es_res.items():
-            logging.info(f"ent is :{ent}")
             for f in flds:
                 if f in ent and ent[f] is None:
                     del ent[f]
@@ -97,9 +96,7 @@ class KGSearch(Dealer):
         res = {}
         es_res = self.dataStore.getFields(es_res, ["content_with_weight", "_score", "SIMILARITY", "SCORE", "from_entity_kwd", "to_entity_kwd",
                                                    "weight_int"])
-        logging.info(f"relation info es_res is :{es_res}")
         for _, ent in es_res.items():
-            logging.info(f"ent is :{ent}")
             if get_float(ent.get("_score", 0)) < sim_thr and get_float(ent.get("SIMILARITY", 0)) < sim_thr \
                     and get_float(ent.get("SCORE",0)) < sim_thr:
                 continue
@@ -128,8 +125,6 @@ class KGSearch(Dealer):
         es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt"], [], filters, [matchDense],
                                        OrderByExpr(), 0, N,
                                        idxnms, kb_ids)
-        logging.info(f"kg res is {es_res}")
-        logging.info(f"es_res type is {type(es_res)}")
         return self._ent_info_from_(es_res, sim_thr)
 
     def get_relevant_relations_by_txt(self, txt, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
@@ -142,7 +137,6 @@ class KGSearch(Dealer):
             ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd", "weight_int"],
             [], filters, [matchDense], OrderByExpr(), 0, N, idxnms, kb_ids)
 
-        logging.info(f"get_relevant_relations_by_txt response is {es_res}")
         return self._relation_info_from_(es_res, sim_thr)
 
     def get_relevant_ents_by_types(self, types, filters, idxnms, kb_ids, N=56):
@@ -207,11 +201,6 @@ class KGSearch(Dealer):
                         nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
                     nhop_pathes[(f, t)]["pagerank"] = wts[i]
 
-        logging.info(f"Retrieved entities are {ents_from_query}")
-        logging.info("Retrieved entities: {}".format(list(ents_from_query.keys())))
-        logging.info("Retrieved relations: {}".format(list(rels_from_txt.keys())))
-        logging.info("Retrieved entities from types({}): {}".format(ty_kwds, list(ents_from_types.keys())))
-        logging.info("Retrieved N-hops: {}".format(list(nhop_pathes.keys())))
 
         # P(E|Q) => P(E) * P(Q|E) => pagerank * sim
         for ent in ents_from_types.keys():
@@ -425,11 +414,6 @@ class KGSearch(Dealer):
                 "nhop_paths": list(nhop_pathes.keys())
             }
         )
-
-        logging.info(f"Retrieved entities are {ents_from_query}")
-        logging.info(f"Retrieved relations: {rels_from_txt}")
-        logging.info("Retrieved entities from types({}): {}".format(ty_kwds, list(ents_from_types.keys())))
-        logging.info("Retrieved N-hops: {}".format(list(nhop_pathes.keys())))
         
         # P(E|Q) => P(E) * P(Q|E) => pagerank * sim
         for ent in ents_from_types.keys():
@@ -460,8 +444,6 @@ class KGSearch(Dealer):
                 "sim": nhop_pathes[(f, t)]["sim"] * (s + 1),
                 "pagerank": nhop_pathes[(f, t)]["pagerank"]
             }
-
-        logging.info(f"ents_from_query before sorted: {ents_from_query}")
         
         # 改进排序算法：使用加权组合而非简单乘积
         def calculate_entity_score(ent_name, ent_info):
@@ -498,7 +480,7 @@ class KGSearch(Dealer):
 
         ents = []
         relas = []
-        logging.info(f"ents_from_query after sorted: {ents_from_query}")
+
         for n, ent in ents_from_query:
             dsc_json = json.loads(ent["description"])
             actual_score = 0.6 * ent["sim"] + 0.4 * ent["pagerank"]

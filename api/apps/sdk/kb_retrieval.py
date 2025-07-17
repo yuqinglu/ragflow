@@ -51,7 +51,7 @@ def process_image_urls(chunks):
                         'response-content-disposition': f'attachment; filename="{chunk["image_name"]}"'
                     }
                 # 生成24小时有效的预签名URL
-                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24), response_headers=response_headers)
+                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24*7), response_headers=response_headers)
                 if presigned_url:
                     chunk['image_url'] = presigned_url
             except Exception as e:
@@ -621,7 +621,7 @@ def get_figures(page=1, page_size=20):
                     response_headers = {
                         'response-content-disposition': f'attachment; filename="{filename}.jpg"'
                     }
-                    presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24), response_headers=response_headers)
+                    presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24*7), response_headers=response_headers)
                     if presigned_url:
                         figure_dict['image_url'] = presigned_url
                 except Exception as e:
@@ -689,7 +689,7 @@ def get_figure_by_id(figure_id):
                 response_headers = {
                         'response-content-disposition': f'attachment; filename="{filename}.jpg"'
                     }
-                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24), response_headers=response_headers)
+                presigned_url = STORAGE_IMPL.get_presigned_url(bucket, filename, timedelta(hours=24*7), response_headers=response_headers)
                 if presigned_url:
                     figure_dict['image_url'] = presigned_url
             except Exception as e:
