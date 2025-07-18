@@ -27,6 +27,7 @@ from rag.utils import singleton
 class RAGFlowMinio:
     def __init__(self):
         self.conn = None
+        self.external_conn = None
         self.__open__()
 
     def __open__(self):
@@ -37,11 +38,27 @@ class RAGFlowMinio:
             pass
 
         try:
+            # 内部连接 - 用于文件操作
             self.conn = Minio(settings.MINIO["host"],
                               access_key=settings.MINIO["user"],
                               secret_key=settings.MINIO["password"],
                               secure=False
                               )
+            
+            # 外部连接 - 用于生成预签名URL
+            if "external_host" in settings.MINIO and settings.MINIO["external_host"]:
+                external_secure = settings.MINIO.get("external_secure", True)
+                self.external_conn = Minio(settings.MINIO["external_host"],
+                                          access_key=settings.MINIO["user"],
+                                          secret_key=settings.MINIO["password"],
+                                          secure=external_secure
+                                          )
+                logging.info(f"External MinIO connection configured: {settings.MINIO['external_host']} (secure: {external_secure})")
+            else:
+                # 如果没有配置外部域名，使用内部连接
+                self.external_conn = self.conn
+                logging.info("No external MinIO host configured, using internal connection for presigned URLs")
+                
         except Exception:
             logging.exception(
                 "Fail to connect %s " % settings.MINIO["host"])
@@ -49,6 +66,9 @@ class RAGFlowMinio:
     def __close__(self):
         del self.conn
         self.conn = None
+        if self.external_conn and self.external_conn != self.conn:
+            del self.external_conn
+        self.external_conn = None
 
     def health(self):
         bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
@@ -111,7 +131,8 @@ class RAGFlowMinio:
     def get_presigned_url(self, bucket, fnm, expires, response_headers=None):
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, fnm, expires, response_headers=response_headers)
+                # 使用外部连接生成预签名URL
+                return self.external_conn.get_presigned_url("GET", bucket, fnm, expires, response_headers=response_headers)
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
                 self.__open__()

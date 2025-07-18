@@ -19,6 +19,9 @@ minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: '10.1.115.38:19000'
+  # 对外访问域名配置，用于生成预签名URL
+  external_host: 'minio2.tongyiqingyuan.com'
+  external_secure: true  # 对外使用HTTPS
 es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
