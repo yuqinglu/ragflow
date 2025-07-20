@@ -61,7 +61,7 @@ RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get('RAGFLOW_DEBUGPY_LISTEN', "0"))
 
 def update_progress():
     lock_value = str(uuid.uuid4())
-    redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
+    redis_lock = RedisDistributedLock("task/progress/lock", lock_value=lock_value, timeout=60)
     logging.info(f"update_progress lock_value: {lock_value}")
     while not stop_event.is_set():
         try:

@@ -70,6 +70,8 @@ The [.env](./.env) file contains important environment variables for Docker.
   The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
 - `REDIS_PASSWORD`  
   The password for Redis.
+- `REDIS_USER`  
+  The username for Redis (optional). If not set, Redis will use password-only authentication. If set, Redis will use username+password authentication.
 
 ### RAGFlow
 

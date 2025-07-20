@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+import random
 from collections import defaultdict
 from hashlib import md5
 from typing import Any, Callable
@@ -29,6 +30,7 @@ from api.utils import get_uuid
 from rag.nlp import search, rag_tokenizer
 from rag.utils.doc_store_conn import OrderByExpr
 from rag.utils.redis_conn import REDIS_CONN
+from rag import settings as rag_settings
 
 GRAPH_FIELD_SEP = "<SEP>"
 
@@ -114,7 +116,10 @@ def set_llm_cache(llmnm, txt, v, history, genconf):
     hasher.update(str(genconf).encode("utf-8"))
 
     k = hasher.hexdigest()
-    REDIS_CONN.set(k, v.encode("utf-8"), 24*3600)
+    # 添加随机化，防止雪崩
+    base_exp = rag_settings.REDIS_CACHE_EXPIRE
+    random_exp = base_exp + random.randint(0, int(base_exp * 0.2))  # 增加0-20%的随机时间
+    REDIS_CONN.set(k, v.encode("utf-8"), random_exp)
 
 
 def get_embed_cache(llmnm, txt):
@@ -136,7 +141,10 @@ def set_embed_cache(llmnm, txt, arr):
 
     k = hasher.hexdigest()
     arr = json.dumps(arr.tolist() if isinstance(arr, np.ndarray) else arr)
-    REDIS_CONN.set(k, arr.encode("utf-8"), 24*3600)
+    # 添加随机化，防止雪崩
+    base_exp = rag_settings.REDIS_CACHE_EXPIRE
+    random_exp = base_exp + random.randint(0, int(base_exp * 0.2))  # 增加0-20%的随机时间
+    REDIS_CONN.set(k, arr.encode("utf-8"), random_exp)
 
 
 def get_tags_from_cache(kb_ids):
@@ -155,7 +163,10 @@ def set_tags_to_cache(kb_ids, tags):
     hasher.update(str(kb_ids).encode("utf-8"))
 
     k = hasher.hexdigest()
-    REDIS_CONN.set(k, json.dumps(tags).encode("utf-8"), 600)
+    # 添加随机化，防止雪崩
+    base_exp = rag_settings.REDIS_SHORT_EXPIRE
+    random_exp = base_exp + random.randint(0, int(base_exp * 0.2))  # 增加0-20%的随机时间
+    REDIS_CONN.set(k, json.dumps(tags).encode("utf-8"), random_exp)
 
 def tidy_graph(graph: nx.Graph, callback):
     """

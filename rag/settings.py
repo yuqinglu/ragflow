@@ -57,10 +57,18 @@ except Exception:
     pass
 DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
 
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
-SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
+SVR_QUEUE_NAME = "queue/task/priority"
+SVR_CONSUMER_GROUP_NAME = "queue/consumer/group"
 PAGERANK_FLD = "pagerank_fea"
 TAG_FLD = "tag_feas"
+
+# Redis配置常量
+REDIS_DEFAULT_EXPIRE = 3600  # 默认过期时间1小时
+REDIS_CACHE_EXPIRE = 24 * 3600  # 缓存过期时间24小时
+REDIS_SHORT_EXPIRE = 600  # 短期过期时间10分钟
+REDIS_MAX_STRING_SIZE = 32 * 1024  # String类型最大32KB
+REDIS_MAX_SET_SIZE = 5000  # Set/ZSet最大5000个元素
+REDIS_MAX_BATCH_SIZE = 128 * 1024  # 批量操作最大128KB
 
 PARALLEL_DEVICES = None
 try:

@@ -1,6 +1,8 @@
 # RAGFlow 服务启动指南
 
 
+uv lock --upgrade
+
 sudo账号安装pyicu依赖
 sudo apt install libicu-dev python3-icu pkg-config
 sh uv-installer.sh

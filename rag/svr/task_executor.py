@@ -663,8 +663,8 @@ async def handle_task():
 
 async def report_status():
     global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
-    REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
-    redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
+    REDIS_CONN.sadd("task/executor/active", CONSUMER_NAME)
+    redis_lock = RedisDistributedLock("task/executor/cleanup", lock_value=CONSUMER_NAME, timeout=60)
     while True:
         try:
             now = datetime.now()
@@ -684,26 +684,29 @@ async def report_status():
                 "failed": FAILED_TASKS,
                 "current": current,
             })
-            REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now.timestamp())
+            # 使用规范的key命名
+            heartbeat_key = f"task/executor/heartbeat/{CONSUMER_NAME}"
+            REDIS_CONN.zadd(heartbeat_key, heartbeat, now.timestamp())
             logging.info(f"{CONSUMER_NAME} reported heartbeat: {heartbeat}")
 
-            expired = REDIS_CONN.zcount(CONSUMER_NAME, 0, now.timestamp() - 60 * 30)
+            expired = REDIS_CONN.zcount(heartbeat_key, 0, now.timestamp() - 60 * 30)
             if expired > 0:
-                REDIS_CONN.zpopmin(CONSUMER_NAME, expired)
+                REDIS_CONN.zpopmin(heartbeat_key, expired)
 
             # clean task executor
             if redis_lock.acquire():
-                task_executors = REDIS_CONN.smembers("TASKEXE")
+                task_executors = REDIS_CONN.smembers("task/executor/active")
                 for consumer_name in task_executors:
                     if consumer_name == CONSUMER_NAME:
                         continue
+                    consumer_heartbeat_key = f"task/executor/heartbeat/{consumer_name}"
                     expired = REDIS_CONN.zcount(
-                        consumer_name, now.timestamp() - WORKER_HEARTBEAT_TIMEOUT, now.timestamp() + 10
+                        consumer_heartbeat_key, now.timestamp() - WORKER_HEARTBEAT_TIMEOUT, now.timestamp() + 10
                     )
                     if expired == 0:
                         logging.info(f"{consumer_name} expired, removed")
-                        REDIS_CONN.srem("TASKEXE", consumer_name)
-                        REDIS_CONN.delete(consumer_name)
+                        REDIS_CONN.srem("task/executor/active", consumer_name)
+                        REDIS_CONN.delete(consumer_heartbeat_key)
         except Exception:
             logging.exception("report_status got exception")
         finally:
@@ -712,7 +715,7 @@ async def report_status():
 
 
 def recover_pending_tasks():
-    redis_lock = RedisDistributedLock("recover_pending_tasks", lock_value=CONSUMER_NAME, timeout=60)
+    redis_lock = RedisDistributedLock("task/recovery/lock", lock_value=CONSUMER_NAME, timeout=60)
     svr_queue_names = get_svr_queue_names()
     while not stop_event.is_set():
         try:
@@ -723,7 +726,7 @@ def recover_pending_tasks():
                     if len(msgs) == 0:
                         continue
 
-                    task_executors = REDIS_CONN.smembers("TASKEXE")
+                    task_executors = REDIS_CONN.smembers("task/executor/active")
                     task_executor_set = {t for t in task_executors}
                     msgs = [msg for msg in msgs if msg['consumer'] not in task_executor_set]
                     for msg in msgs:
