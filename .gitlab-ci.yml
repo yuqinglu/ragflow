@@ -145,7 +145,40 @@ deploy_test:
       set -e
       export IMAGE_NAME=${IMAGE_NAME}
       export IMAGE_TAG=${IMAGE_TAG}
-      cd /home/luyuqing/ragflow-deploy/
+      
+      # 检查并创建部署目录
+      echo "检查部署目录..."
+      DEPLOY_DIR="/home/git-runner/ragflow-deploy"
+      if [ ! -d "$DEPLOY_DIR" ]; then
+        echo "创建部署目录: $DEPLOY_DIR"
+        mkdir -p "$DEPLOY_DIR"
+      fi
+      
+      cd "$DEPLOY_DIR"
+      echo "当前工作目录: $(pwd)"
+      
+      # 检查 docker-compose 文件是否存在，如果不存在则从项目目录复制
+      if [ ! -f "docker-compose-nacos.yml" ]; then
+        echo "docker-compose-nacos.yml 文件不存在，尝试从项目目录复制..."
+        PROJECT_DIR="/builds/ragflow"
+        if [ -f "$PROJECT_DIR/docker/docker-compose-nacos.yml" ]; then
+          echo "复制 docker-compose-nacos.yml 到部署目录"
+          cp "$PROJECT_DIR/docker/docker-compose-nacos.yml" .
+          cp "$PROJECT_DIR/docker/docker-compose-base.yml" .
+          cp "$PROJECT_DIR/docker/.env" .
+          cp "$PROJECT_DIR/docker/service_conf.yaml.template" .
+          echo "复制完成"
+        else
+          echo "错误: 无法找到 docker-compose-nacos.yml 文件"
+          echo "项目目录: $PROJECT_DIR"
+          echo "请确保项目包含正确的 docker-compose 配置文件"
+          exit 1
+        fi
+      fi
+      
+      # 显示当前目录内容
+      echo "部署目录内容:"
+      ls -la
       
       echo '正在拉取镜像：${IMAGE_NAME}:${IMAGE_TAG}'
       docker pull \${IMAGE_NAME}:\${IMAGE_TAG}
