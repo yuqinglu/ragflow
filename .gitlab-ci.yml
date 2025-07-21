@@ -105,8 +105,8 @@ test_docker:
     - echo "镜像拉取成功"
     
     - echo "3. 测试镜像基本信息..."
-    - docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} python --version
-    - docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} cat /ragflow/VERSION
+    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} python --version
+    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} cat /ragflow/VERSION
     - echo "镜像基本信息测试完成"
     
     - echo "4. 校验Registry镜像是否存在..."
