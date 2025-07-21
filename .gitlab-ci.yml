@@ -176,7 +176,7 @@ deploy_test:
     - build
   environment:
     name: test
-    url: http://172.30.204.242:9380  # RAGFlow测试环境地址
+    url: http://10.1.115.38:9380/api/v1/health   # RAGFlow测试环境地址
 
 # 生产环境部署阶段
 deploy_production:
