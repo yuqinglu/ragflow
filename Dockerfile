@@ -99,7 +99,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN cargo --version && rustc --version
 
-# Add msssql ODBC driver
+# Add msssql ODBC driver with retry mechanism
 # macOS ARM64 environment, install msodbcsql18.
 # general x86_64 environment, install msodbcsql17.
 #RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
