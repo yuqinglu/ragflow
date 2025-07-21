@@ -99,22 +99,103 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN cargo --version && rustc --version
 
-# Add msssql ODBC driver
+# Add msssql ODBC driver with retry mechanism
 # macOS ARM64 environment, install msodbcsql18.
 # general x86_64 environment, install msodbcsql17.
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt update && \
-    arch="$(uname -m)"; \
-    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
-        # ARM64 (macOS/Apple Silicon or Linux aarch64)
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
+    echo "=== Installing Microsoft ODBC Driver ===" && \
+    # Function to install ODBC driver with retry
+    install_odbc() { \
+        local max_attempts=3; \
+        local attempt=1; \
+        while [ $attempt -le $max_attempts ]; do \
+            echo "Attempt $attempt of $max_attempts to install ODBC driver..."; \
+            \
+            # Add Microsoft repository key with retry \
+            for i in {1..3}; do \
+                echo "Adding Microsoft repository key (attempt $i)..."; \
+                if curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | apt-key add -; then \
+                    echo "Successfully added Microsoft repository key"; \
+                    break; \
+                else \
+                    echo "Failed to add Microsoft repository key (attempt $i)"; \
+                    if [ $i -eq 3 ]; then \
+                        echo "All attempts to add Microsoft repository key failed"; \
+                        return 1; \
+                    fi; \
+                    sleep 5; \
+                fi; \
+            done; \
+            \
+            # Add Microsoft repository with retry \
+            for i in {1..3}; do \
+                echo "Adding Microsoft repository (attempt $i)..."; \
+                if curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list; then \
+                    echo "Successfully added Microsoft repository"; \
+                    break; \
+                else \
+                    echo "Failed to add Microsoft repository (attempt $i)"; \
+                    if [ $i -eq 3 ]; then \
+                        echo "All attempts to add Microsoft repository failed"; \
+                        return 1; \
+                    fi; \
+                    sleep 5; \
+                fi; \
+            done; \
+            \
+            # Update package list \
+            echo "Updating package list..."; \
+            if ! apt update; then \
+                echo "Failed to update package list"; \
+                if [ $attempt -eq $max_attempts ]; then \
+                    return 1; \
+                fi; \
+                attempt=$((attempt + 1)); \
+                sleep 10; \
+                continue; \
+            fi; \
+            \
+            # Install ODBC driver based on architecture \
+            arch="$(uname -m)"; \
+            echo "Detected architecture: $arch"; \
+            \
+            if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
+                echo "Installing msodbcsql18 for ARM64..."; \
+                if ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; then \
+                    echo "Successfully installed msodbcsql18"; \
+                    return 0; \
+                else \
+                    echo "Failed to install msodbcsql18"; \
+                fi; \
+            else \
+                echo "Installing msodbcsql17 for x86_64..."; \
+                if ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; then \
+                    echo "Successfully installed msodbcsql17"; \
+                    return 0; \
+                else \
+                    echo "Failed to install msodbcsql17"; \
+                fi; \
+            fi; \
+            \
+            if [ $attempt -eq $max_attempts ]; then \
+                echo "All attempts to install ODBC driver failed"; \
+                return 1; \
+            fi; \
+            \
+            echo "Retrying in 10 seconds..."; \
+            attempt=$((attempt + 1)); \
+            sleep 10; \
+        done; \
+    }; \
+    \
+    # Execute the installation function \
+    if install_odbc; then \
+        echo "=== ODBC driver installation completed successfully ==="; \
     else \
-        # x86_64 or others
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
-    fi || \
-    { echo "Failed to install ODBC driver"; exit 1; }
+        echo "=== ODBC driver installation failed after all attempts ==="; \
+        echo "This is a non-critical component, continuing build..."; \
+        echo "ODBC functionality will not be available in this build."; \
+    fi
 
 
 
