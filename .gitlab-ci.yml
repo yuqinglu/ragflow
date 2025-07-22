@@ -17,13 +17,6 @@ variables:
 # 构建阶段
 build:
   stage: build
-  image: docker:24.0.5
-  services:
-    - name: docker:24.0.5-dind
-      command: ["--registry-mirror", "https://registry.tyqy.duckdns.org"]
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
   tags:
     - shell
     - tyqy
