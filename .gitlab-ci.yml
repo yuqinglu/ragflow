@@ -25,7 +25,7 @@ build:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
   tags:
-    - docker
+    - shell
     - tyqy
   before_script:
     - echo "=== RAGFlow CI/CD 流水线开始 ==="
@@ -92,7 +92,7 @@ test_docker:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
   tags:
-    - docker
+    - shell
     - tyqy
   script:
     - echo "=== 开始测试阶段 ==="
