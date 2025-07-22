@@ -1,0 +1,278 @@
+# RAGFlow GitLab CI/CD 流水线
+# 基于 GitLab 官方 Docker 模板优化
+
+# 定义流水线阶段
+stages:
+  - build
+  - test
+  - deploy
+
+# 全局变量定义
+variables:
+  REGISTRY: "registry.tyqy.duckdns.org"  # 私有Registry地址
+  PLATFORM: "linux/amd64"                # 目标平台
+  PROJECT_NAME: "ragflow"                # 项目名称
+  PYTHON_VERSION: "3.10"                 # Python版本
+
+# 构建阶段
+build:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - name: docker:24.0.5-dind
+      command: ["--registry-mirror", "https://registry.tyqy.duckdns.org"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  tags:
+    - docker
+    - tyqy
+  before_script:
+    - echo "=== RAGFlow CI/CD 流水线开始 ==="
+    - echo "项目:${PROJECT_NAME}"
+    - export GIT_COMMIT_ID=${CI_COMMIT_SHORT_SHA}
+    - export TIMESTAMP=$(date +"%Y%m%d%H%M")
+    - export IMAGE_TAG="0.19.0-${TIMESTAMP}-${GIT_COMMIT_ID}"
+    - export IMAGE_NAME="${REGISTRY}/${PROJECT_NAME}"
+    - echo "镜像名称：${IMAGE_NAME}"
+    - echo "镜像标签：${IMAGE_TAG}"
+  script:
+    - echo "=== 开始构建RAGFlow Docker镜像 ==="
+    - echo "目标平台：${PLATFORM}"
+    - echo "Python版本：${PYTHON_VERSION}"
+    
+    # 检查Docker环境
+    - echo "=== 检查Docker环境 ==="
+    - docker info
+    - docker version
+    
+    # 检查项目文件
+    - echo "=== 检查项目文件 ==="
+    - ls -la
+    - echo "检查关键文件："
+    - test -f Dockerfile && echo "✅ Dockerfile 存在" || echo "❌ Dockerfile 不存在"
+    - test -f pyproject.toml && echo "✅ pyproject.toml 存在" || echo "❌ pyproject.toml 不存在"
+    - test -f uv.lock && echo "✅ uv.lock 存在" || echo "❌ uv.lock 不存在"
+    
+    # 构建镜像
+    - echo "=== 开始Docker构建 ==="
+    - docker build --platform ${PLATFORM} -f ./Dockerfile -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+    
+    # 推送镜像到远端
+    - echo "=== 推送镜像到远端 ==="
+    - docker push ${IMAGE_NAME}:${IMAGE_TAG}
+    - docker push ${IMAGE_NAME}:latest
+
+    # 生成 build.env 文件
+    - echo "=== 生成build.env文件 ==="
+    - echo "IMAGE_NAME=${IMAGE_NAME}" > build.env
+    - echo "IMAGE_TAG=${IMAGE_TAG}" >> build.env
+    - echo "GIT_COMMIT_ID=${GIT_COMMIT_ID}" >> build.env
+    - echo "BUILD_TIMESTAMP=${TIMESTAMP}" >> build.env
+    - echo "PROJECT_NAME=${PROJECT_NAME}" >> build.env
+    - echo "PYTHON_VERSION=${PYTHON_VERSION}" >> build.env
+    
+    - echo "=== 构建和推送完成！ ==="
+    - echo "镜像标签：${IMAGE_NAME}:${IMAGE_TAG}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH == "production"'
+  artifacts:
+    reports:
+      dotenv: build.env
+
+# 测试阶段
+test_docker:
+  stage: test
+  image: docker:24.0.5
+  services:
+    - name: docker:24.0.5-dind
+      command: ["--registry-mirror", "https://registry.tyqy.duckdns.org"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  tags:
+    - docker
+    - tyqy
+  script:
+    - echo "=== 开始测试阶段 ==="
+    - echo "1. 测试Docker连接..."
+    - docker info
+    - echo "Docker连接测试完成"
+    
+    - echo "2. 测试镜像拉取..."
+    - docker pull ${IMAGE_NAME}:${IMAGE_TAG}
+    - echo "镜像拉取成功"
+    
+    - echo "3. 测试镜像基本信息..."
+    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} python --version
+    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} cat /ragflow/VERSION
+    - echo "镜像基本信息测试完成"
+    
+    - echo "4. 校验Registry镜像是否存在..."
+    - |
+      REGISTRY_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
+      echo "检查URL: $REGISTRY_URL"
+      
+      if wget --spider --server-response --no-verbose "$REGISTRY_URL" 2>&1 | grep -q "HTTP/.* 200"; then
+        echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 已存在于Registry"
+      else
+        echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 不存在于Registry"
+        exit 1
+      fi
+    
+    - echo "=== 所有测试完成 ==="
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH == "production"'
+  dependencies:
+    - build
+
+# 测试环境部署阶段
+# deploy_test:
+#   stage: deploy
+#   tags:
+#     - docker
+#     - tyqy
+#   script:
+#     - echo "=== 开始部署到测试环境 ==="
+#     - echo "部署镜像：${IMAGE_NAME}:${IMAGE_TAG}"
+#     - echo "环境：测试环境 (dev分支)"
+#     - echo "=== 执行部署 ==="
+    
+#     # 部署到测试环境
+#     - |
+#       set -e
+#       export IMAGE_NAME=${IMAGE_NAME}
+#       export IMAGE_TAG=${IMAGE_TAG}
+      
+#       # 检查并创建部署目录
+#       echo "检查部署目录..."
+#       DEPLOY_DIR="/home/git-runner/ragflow-deploy"
+#       if [ ! -d "$DEPLOY_DIR" ]; then
+#         echo "创建部署目录: $DEPLOY_DIR"
+#         mkdir -p "$DEPLOY_DIR"
+#       fi
+      
+#       cd "$DEPLOY_DIR"
+#       echo "当前工作目录: $(pwd)"
+      
+#       # 检查 docker-compose 文件是否存在，如果不存在则从项目目录复制
+#       if [ ! -f "docker-compose-nacos.yml" ]; then
+#         echo "docker-compose-nacos.yml 文件不存在，尝试从项目目录复制..."
+#         PROJECT_DIR="/builds/ragflow"
+#         if [ -f "$PROJECT_DIR/docker/docker-compose-nacos.yml" ]; then
+#           echo "复制 docker-compose-nacos.yml 到部署目录"
+#           cp "$PROJECT_DIR/docker/docker-compose-nacos.yml" .
+#           cp "$PROJECT_DIR/docker/docker-compose-base.yml" .
+#           cp "$PROJECT_DIR/docker/.env" .
+#           cp "$PROJECT_DIR/docker/service_conf.yaml.template" .
+#           echo "复制完成"
+#         else
+#           echo "错误: 无法找到 docker-compose-nacos.yml 文件"
+#           echo "项目目录: $PROJECT_DIR"
+#           echo "请确保项目包含正确的 docker-compose 配置文件"
+#           exit 1
+#         fi
+#       fi
+      
+#       # 显示当前目录内容
+#       echo "部署目录内容:"
+#       ls -la
+      
+#       echo '正在拉取镜像：${IMAGE_NAME}:${IMAGE_TAG}'
+#       docker pull \${IMAGE_NAME}:\${IMAGE_TAG}
+      
+#       echo '停止现有服务...'
+#       docker compose -f docker-compose-nacos.yml down || true
+      
+#       echo '启动测试环境服务...'
+#       export CI_RAGFLOW_IMAGE=${IMAGE_TAG}
+#       echo "当前CI_RAGFLOW_IMAGE环境变量值: $CI_RAGFLOW_IMAGE"
+#       echo "当前IMAGE_TAG值: ${IMAGE_TAG}"
+#       docker compose -f docker-compose-nacos.yml up -d
+      
+#       echo '等待服务启动...'
+#       sleep 60
+      
+#       echo '检查服务状态...'
+#       docker compose -f docker-compose-nacos.yml ps
+      
+#       echo '检查RAGFlow服务健康状态...'
+#       sleep 30
+#       curl -f http://localhost:9380/api/v1/health || echo '健康检查失败，但继续部署'
+    
+#     - echo "=== 测试环境部署完成 ==="
+#   rules:
+#     - if: '$CI_COMMIT_BRANCH == "dev"'
+#   dependencies:
+#     - build
+#   environment:
+#     name: test
+#     url: http://10.1.115.38:9380/api/v1/health   # RAGFlow测试环境地址
+
+# 生产环境部署阶段
+deploy_production:
+  stage: deploy
+  tags:
+    - deploy
+    - aly3
+  script:
+    - echo "=== 开始部署到生产环境 ==="
+    - echo "部署镜像：${IMAGE_NAME}:${IMAGE_TAG}"
+    - echo "环境：生产环境 (production分支)"
+    
+    # 登录阿里云ACR
+    - echo "=== 登录阿里云ACR ==="
+    - echo "r3YyO%jy0zr@MEeTMOHHKhfaM#)c6P8z" | docker login --username=deploybot@1740345584619196 acr-1-registry-vpc.cn-beijing.cr.aliyuncs.com --password-stdin
+    
+    # 定义镜像名称
+    - export SOURCE_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+    - export TARGET_REGISTRY="acr-1-registry-vpc.cn-beijing.cr.aliyuncs.com"
+    - export TARGET_NAMESPACE="tyqy"
+    - export TARGET_IMAGE="${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:${IMAGE_TAG}"
+    
+    # 复制镜像到阿里云ACR
+    - echo "=== 复制镜像到阿里云ACR ==="
+    - echo "源镜像：${SOURCE_IMAGE}"
+    - echo "目标镜像：${TARGET_IMAGE}"
+    
+    # 在sudo环境中执行镜像操作
+    - |
+      sudo bash -c "
+        set -e
+        
+        echo '正在拉取源镜像：${SOURCE_IMAGE}'
+        docker pull ${SOURCE_IMAGE}
+        
+        echo '正在给镜像打标签：${TARGET_IMAGE}'
+        docker tag ${SOURCE_IMAGE} ${TARGET_IMAGE}
+        
+        echo '正在推送到阿里云ACR：${TARGET_IMAGE}'
+        docker push ${TARGET_IMAGE}
+        
+        echo '正在推送latest标签'
+        docker tag ${SOURCE_IMAGE} ${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:latest
+        docker push ${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:latest
+        
+        echo '镜像复制完成'
+      "
+    
+    - echo "=== 镜像复制完成 ==="
+    - echo "镜像已推送到：${TARGET_IMAGE}"
+    
+    # 执行生产环境部署
+    - echo "=== 执行生产环境部署 ==="
+    # TODO: 生产环境部署命令，调用阿里云API
+    - echo "TODO：生产环境部署命令，调用阿里云API来实现"
+
+    - echo "=== 生产环境部署完成 ==="
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "production"'
+  dependencies:
+    - build
+  # when: manual  # 生产环境需要手动触发
+
+  # 定义生产环境，让GitLab接管部署和回滚
+  environment:
+    name: production
