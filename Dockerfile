@@ -11,13 +11,13 @@ WORKDIR /ragflow
 
 # Copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc 
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
             /huggingface.co/BAAI/bge-large-zh-v1.5 \
@@ -27,7 +27,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=/,target=/deps \
     cp -r /deps/nltk_data /root/ && \
     cp /deps/tika-server-standard-3.0.0.jar /deps/tika-server-standard-3.0.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
@@ -99,38 +99,38 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN cargo --version && rustc --version
 
-# Add msssql ODBC driver
+# Add msssql ODBC driver with retry mechanism
 # macOS ARM64 environment, install msodbcsql18.
 # general x86_64 environment, install msodbcsql17.
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt update && \
-    arch="$(uname -m)"; \
-    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
-        # ARM64 (macOS/Apple Silicon or Linux aarch64)
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
-    else \
-        # x86_64 or others
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
-    fi || \
-    { echo "Failed to install ODBC driver"; exit 1; }
-
+#RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+#    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+#    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+#    apt update && \
+#    arch="$(uname -m)"; \
+#    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
+#        # ARM64 (macOS/Apple Silicon or Linux aarch64)
+#        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
+#    else \
+#        # x86_64 or others
+#        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
+#    fi || \
+#    { echo "Failed to install ODBC driver"; exit 1; }
+#
 
 
 # Add dependencies of selenium
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
     unzip /chrome-linux64.zip && \
     mv chrome-linux64 /opt/chrome && \
     ln -s /opt/chrome/chrome /usr/local/bin/
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
     unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \
     mv chromedriver /usr/local/bin/ && \
     rm -f /usr/bin/google-chrome
 
 # https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
 # aspose-slides on linux/arm64 is unavailable
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=/,target=/deps \
     if [ "$(uname -m)" = "x86_64" ]; then \
         dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
     elif [ "$(uname -m)" = "aarch64" ]; then \
