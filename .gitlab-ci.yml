@@ -129,87 +129,87 @@ test_docker:
     - build
 
 # 测试环境部署阶段
-deploy_test:
-  stage: deploy
-  tags:
-    - docker
-    - tyqy
-  script:
-    - echo "=== 开始部署到测试环境 ==="
-    - echo "部署镜像：${IMAGE_NAME}:${IMAGE_TAG}"
-    - echo "环境：测试环境 (dev分支)"
-    - echo "=== 执行部署 ==="
+# deploy_test:
+#   stage: deploy
+#   tags:
+#     - docker
+#     - tyqy
+#   script:
+#     - echo "=== 开始部署到测试环境 ==="
+#     - echo "部署镜像：${IMAGE_NAME}:${IMAGE_TAG}"
+#     - echo "环境：测试环境 (dev分支)"
+#     - echo "=== 执行部署 ==="
     
-    # 部署到测试环境
-    - |
-      set -e
-      export IMAGE_NAME=${IMAGE_NAME}
-      export IMAGE_TAG=${IMAGE_TAG}
+#     # 部署到测试环境
+#     - |
+#       set -e
+#       export IMAGE_NAME=${IMAGE_NAME}
+#       export IMAGE_TAG=${IMAGE_TAG}
       
-      # 检查并创建部署目录
-      echo "检查部署目录..."
-      DEPLOY_DIR="/home/git-runner/ragflow-deploy"
-      if [ ! -d "$DEPLOY_DIR" ]; then
-        echo "创建部署目录: $DEPLOY_DIR"
-        mkdir -p "$DEPLOY_DIR"
-      fi
+#       # 检查并创建部署目录
+#       echo "检查部署目录..."
+#       DEPLOY_DIR="/home/git-runner/ragflow-deploy"
+#       if [ ! -d "$DEPLOY_DIR" ]; then
+#         echo "创建部署目录: $DEPLOY_DIR"
+#         mkdir -p "$DEPLOY_DIR"
+#       fi
       
-      cd "$DEPLOY_DIR"
-      echo "当前工作目录: $(pwd)"
+#       cd "$DEPLOY_DIR"
+#       echo "当前工作目录: $(pwd)"
       
-      # 检查 docker-compose 文件是否存在，如果不存在则从项目目录复制
-      if [ ! -f "docker-compose-nacos.yml" ]; then
-        echo "docker-compose-nacos.yml 文件不存在，尝试从项目目录复制..."
-        PROJECT_DIR="/builds/ragflow"
-        if [ -f "$PROJECT_DIR/docker/docker-compose-nacos.yml" ]; then
-          echo "复制 docker-compose-nacos.yml 到部署目录"
-          cp "$PROJECT_DIR/docker/docker-compose-nacos.yml" .
-          cp "$PROJECT_DIR/docker/docker-compose-base.yml" .
-          cp "$PROJECT_DIR/docker/.env" .
-          cp "$PROJECT_DIR/docker/service_conf.yaml.template" .
-          echo "复制完成"
-        else
-          echo "错误: 无法找到 docker-compose-nacos.yml 文件"
-          echo "项目目录: $PROJECT_DIR"
-          echo "请确保项目包含正确的 docker-compose 配置文件"
-          exit 1
-        fi
-      fi
+#       # 检查 docker-compose 文件是否存在，如果不存在则从项目目录复制
+#       if [ ! -f "docker-compose-nacos.yml" ]; then
+#         echo "docker-compose-nacos.yml 文件不存在，尝试从项目目录复制..."
+#         PROJECT_DIR="/builds/ragflow"
+#         if [ -f "$PROJECT_DIR/docker/docker-compose-nacos.yml" ]; then
+#           echo "复制 docker-compose-nacos.yml 到部署目录"
+#           cp "$PROJECT_DIR/docker/docker-compose-nacos.yml" .
+#           cp "$PROJECT_DIR/docker/docker-compose-base.yml" .
+#           cp "$PROJECT_DIR/docker/.env" .
+#           cp "$PROJECT_DIR/docker/service_conf.yaml.template" .
+#           echo "复制完成"
+#         else
+#           echo "错误: 无法找到 docker-compose-nacos.yml 文件"
+#           echo "项目目录: $PROJECT_DIR"
+#           echo "请确保项目包含正确的 docker-compose 配置文件"
+#           exit 1
+#         fi
+#       fi
       
-      # 显示当前目录内容
-      echo "部署目录内容:"
-      ls -la
+#       # 显示当前目录内容
+#       echo "部署目录内容:"
+#       ls -la
       
-      echo '正在拉取镜像：${IMAGE_NAME}:${IMAGE_TAG}'
-      docker pull \${IMAGE_NAME}:\${IMAGE_TAG}
+#       echo '正在拉取镜像：${IMAGE_NAME}:${IMAGE_TAG}'
+#       docker pull \${IMAGE_NAME}:\${IMAGE_TAG}
       
-      echo '停止现有服务...'
-      docker compose -f docker-compose-nacos.yml down || true
+#       echo '停止现有服务...'
+#       docker compose -f docker-compose-nacos.yml down || true
       
-      echo '启动测试环境服务...'
-      export CI_RAGFLOW_IMAGE=${IMAGE_TAG}
-      echo "当前CI_RAGFLOW_IMAGE环境变量值: $CI_RAGFLOW_IMAGE"
-      echo "当前IMAGE_TAG值: ${IMAGE_TAG}"
-      docker compose -f docker-compose-nacos.yml up -d
+#       echo '启动测试环境服务...'
+#       export CI_RAGFLOW_IMAGE=${IMAGE_TAG}
+#       echo "当前CI_RAGFLOW_IMAGE环境变量值: $CI_RAGFLOW_IMAGE"
+#       echo "当前IMAGE_TAG值: ${IMAGE_TAG}"
+#       docker compose -f docker-compose-nacos.yml up -d
       
-      echo '等待服务启动...'
-      sleep 60
+#       echo '等待服务启动...'
+#       sleep 60
       
-      echo '检查服务状态...'
-      docker compose -f docker-compose-nacos.yml ps
+#       echo '检查服务状态...'
+#       docker compose -f docker-compose-nacos.yml ps
       
-      echo '检查RAGFlow服务健康状态...'
-      sleep 30
-      curl -f http://localhost:9380/api/v1/health || echo '健康检查失败，但继续部署'
+#       echo '检查RAGFlow服务健康状态...'
+#       sleep 30
+#       curl -f http://localhost:9380/api/v1/health || echo '健康检查失败，但继续部署'
     
-    - echo "=== 测试环境部署完成 ==="
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "dev"'
-  dependencies:
-    - build
-  environment:
-    name: test
-    url: http://10.1.115.38:9380/api/v1/health   # RAGFlow测试环境地址
+#     - echo "=== 测试环境部署完成 ==="
+#   rules:
+#     - if: '$CI_COMMIT_BRANCH == "dev"'
+#   dependencies:
+#     - build
+#   environment:
+#     name: test
+#     url: http://10.1.115.38:9380/api/v1/health   # RAGFlow测试环境地址
 
 # 生产环境部署阶段
 deploy_production:
