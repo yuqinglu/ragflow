@@ -47,8 +47,6 @@ build:
       files:
         - pyproject.toml
         - uv.lock
-        - web/package.json
-        - web/package-lock.json
     paths:
       - .cache/docker
       - .cache/uv
