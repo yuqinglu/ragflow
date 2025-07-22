@@ -99,9 +99,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt install -y nodejs
 
-# 安装 Rust 工具链 - 使用缓存优化
-RUN --mount=type=cache,id=ragflow_cargo,target=/root/.cargo,sharing=locked \
-    apt update && apt install -y curl build-essential \
+# 安装 Rust 工具链
+RUN apt update && apt install -y curl build-essential \
     && if [ "$NEED_MIRROR" == "1" ]; then \
          # Use TUNA mirrors for rustup/rust dist files
          export RUSTUP_DIST_SERVER="https://mirrors.tuna.tsinghua.edu.cn/rustup"; \
@@ -110,7 +109,9 @@ RUN --mount=type=cache,id=ragflow_cargo,target=/root/.cargo,sharing=locked \
        fi; \
     # Force curl to use HTTP/1.1
     curl --proto '=https' --tlsv1.2 --http1.1 -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal \
-    && echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc
+    && echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc \
+    && source /root/.bashrc \
+    && echo "Rust installation completed"
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
