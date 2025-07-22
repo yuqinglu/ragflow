@@ -35,13 +35,7 @@ RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_deps:latest,source=
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.0.0.jar"
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Setup apt
-# Python package and implicit dependencies:
-# opencv-python: libglib2.0-0 libglx-mesa0 libgl1
-# aspose-slides: pkg-config libicu-dev libgdiplus         libssl1.1_1.1.1f-1ubuntu2_amd64.deb
-# python-pptx:   default-jdk                              tika-server-standard-3.0.0.jar
-# selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
-# Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
+# Setup apt - 优化缓存策略，将不常变化的包单独安装
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
@@ -51,17 +45,39 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt --no-install-recommends install -y ca-certificates && \
-    apt update && \
-    apt install -y libglib2.0-0 libglx-mesa0 libgl1 && \
-    apt install -y pkg-config libicu-dev libgdiplus && \
-    apt install -y default-jdk && \
-    apt install -y libatk-bridge2.0-0 && \
-    apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
-    apt install -y libjemalloc-dev && \
-    apt install -y python3-pip pipx nginx unzip curl wget git vim less && \
-    apt install -y ghostscript
+    apt --no-install-recommends install -y ca-certificates
 
+# 安装基础系统包 - 分层安装以优化缓存
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y libglib2.0-0 libglx-mesa0 libgl1
+
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y pkg-config libicu-dev libgdiplus
+
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y default-jdk
+
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y libatk-bridge2.0-0
+
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
+
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y libjemalloc-dev
+
+# 安装开发工具和常用工具
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt update && \
+    apt install -y python3-pip pipx nginx unzip curl wget git vim less ghostscript
+
+# 配置 Python 包管理器和 uv
 RUN if [ "$NEED_MIRROR" == "1" ]; then \
         pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
         pip3 config set global.trusted-host mirrors.aliyun.com; \
@@ -83,8 +99,9 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt install -y nodejs
 
-# A modern version of cargo is needed for the latest version of the Rust compiler.
-RUN apt update && apt install -y curl build-essential \
+# 安装 Rust 工具链 - 使用缓存优化
+RUN --mount=type=cache,id=ragflow_cargo,target=/root/.cargo,sharing=locked \
+    apt update && apt install -y curl build-essential \
     && if [ "$NEED_MIRROR" == "1" ]; then \
          # Use TUNA mirrors for rustup/rust dist files
          export RUSTUP_DIST_SERVER="https://mirrors.tuna.tsinghua.edu.cn/rustup"; \
@@ -150,6 +167,7 @@ COPY pyproject.toml uv.lock ./
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    --mount=type=cache,id=ragflow_pip,target=/root/.cache/pip,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
     else \

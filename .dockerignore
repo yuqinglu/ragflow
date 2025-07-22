@@ -1,0 +1,105 @@
+# Git 相关
+.git
+.gitignore
+.gitattributes
+
+# 文档和说明
+README.md
+README_zh.md
+*.md
+docs/
+
+# 测试相关
+test/
+tests/
+**/test/
+**/tests/
+*.test.js
+*.test.ts
+*.test.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 开发工具配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 构建产物
+dist/
+build/
+*.egg-info/
+*.egg
+node_modules/
+.npm
+.yarn
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+.tmp/
+.temp/
+
+# 缓存文件
+.cache/
+cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# 环境文件
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Docker 相关
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD 相关
+.gitlab-ci.yml
+.github/
+.gitlab/
+
+# 其他
+.DS_Store
+Thumbs.db
+*.bak
+*.backup
+*.orig
+
+# 大型数据文件
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# 模型文件（如果不需要在构建时包含）
+*.bin
+*.safetensors
+*.ckpt
+*.pth
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 备份文件
+*.backup
+*.old 

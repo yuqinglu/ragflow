@@ -13,6 +13,27 @@ variables:
   PLATFORM: "linux/amd64"                # 目标平台
   PROJECT_NAME: "ragflow"                # 项目名称
   PYTHON_VERSION: "3.10"                 # Python版本
+  # Docker 构建缓存配置
+  DOCKER_BUILDKIT: "1"
+  BUILDKIT_PROGRESS: "plain"
+  # 缓存配置
+  CACHE_KEY: "$CI_COMMIT_REF_SLUG-$CI_JOB_NAME"
+  CACHE_PREFIX: "ragflow"
+
+# 全局缓存配置
+cache:
+  key: 
+    files:
+      - pyproject.toml
+      - uv.lock
+  paths:
+    - .cache/docker
+    - .cache/uv
+    - .cache/npm
+    - .cache/apt
+    - .cache/pip
+    - .cache/cargo
+  policy: pull-push
 
 # 构建阶段
 build:
@@ -20,6 +41,23 @@ build:
   tags:
     - shell
     - tyqy
+  # 构建阶段专用缓存
+  cache:
+    key: 
+      files:
+        - pyproject.toml
+        - uv.lock
+        - web/package.json
+        - web/package-lock.json
+    paths:
+      - .cache/docker
+      - .cache/uv
+      - .cache/npm
+      - .cache/apt
+      - .cache/pip
+      - .cache/cargo
+    policy: pull-push
+    when: 'on_success'
   before_script:
     - echo "=== RAGFlow CI/CD 流水线开始 ==="
     - echo "项目:${PROJECT_NAME}"
@@ -29,6 +67,10 @@ build:
     - export IMAGE_NAME="${REGISTRY}/${PROJECT_NAME}"
     - echo "镜像名称：${IMAGE_NAME}"
     - echo "镜像标签：${IMAGE_TAG}"
+    
+    # 运行构建优化脚本
+    - echo "=== 运行构建优化脚本 ==="
+    - bash scripts/optimize_build.sh
   script:
     - echo "=== 开始构建RAGFlow Docker镜像 ==="
     - echo "目标平台：${PLATFORM}"
@@ -47,9 +89,19 @@ build:
     - test -f pyproject.toml && echo "✅ pyproject.toml 存在" || echo "❌ pyproject.toml 不存在"
     - test -f uv.lock && echo "✅ uv.lock 存在" || echo "❌ uv.lock 不存在"
     
-    # 构建镜像
-    - echo "=== 开始Docker构建 ==="
-    - docker build --platform ${PLATFORM} --build-arg NEED_MIRROR=1 -f ./Dockerfile -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+    # 构建镜像（使用 BuildKit 缓存）
+    - echo "=== 开始Docker构建（使用缓存） ==="
+    - |
+      docker buildx build \
+        --platform ${PLATFORM} \
+        --build-arg NEED_MIRROR=1 \
+        --cache-from type=local,src=.cache/docker \
+        --cache-to type=local,dest=.cache/docker,mode=max \
+        --file ./Dockerfile \
+        --tag ${IMAGE_NAME}:${IMAGE_TAG} \
+        --tag ${IMAGE_NAME}:latest \
+        --progress=plain \
+        .
     
     # 推送镜像到远端
     - echo "=== 推送镜像到远端 ==="
@@ -67,12 +119,20 @@ build:
     
     - echo "=== 构建和推送完成！ ==="
     - echo "镜像标签：${IMAGE_NAME}:${IMAGE_TAG}"
+    
+    # 保存缓存状态
+    - echo "=== 保存构建缓存 ==="
+    - du -sh .cache/ || echo "缓存目录大小检查失败"
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
     - if: '$CI_COMMIT_BRANCH == "production"'
   artifacts:
     reports:
       dotenv: build.env
+    paths:
+      - .cache/
+    expire_in: 1 week
+    when: 'on_success'
 
 # 测试阶段
 test_docker:
