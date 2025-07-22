@@ -56,7 +56,7 @@ build:
     
     # 构建镜像
     - echo "=== 开始Docker构建 ==="
-    - docker build --platform ${PLATFORM} -f ./Dockerfile -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
+    - docker build --platform ${PLATFORM} --build-arg NEED_MIRROR=1 -f ./Dockerfile -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest .
     
     # 推送镜像到远端
     - echo "=== 推送镜像到远端 ==="
