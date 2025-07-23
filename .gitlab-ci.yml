@@ -27,7 +27,6 @@ cache:
       - pyproject.toml
       - uv.lock
   paths:
-    - .cache/docker
     - .cache/uv
     - .cache/npm
     - .cache/apt
@@ -48,7 +47,6 @@ build:
         - pyproject.toml
         - uv.lock
     paths:
-      - .cache/docker
       - .cache/uv
       - .cache/npm
       - .cache/apt
@@ -69,10 +67,6 @@ build:
     # 运行构建优化脚本
     - echo "=== 运行构建优化脚本 ==="
     - bash scripts/optimize_build.sh
-    
-    # 创建缓存目录
-    - echo "=== 创建缓存目录 ==="
-    - mkdir -p .cache/docker
   script:
     - echo "=== 开始构建RAGFlow Docker镜像 ==="
     - echo "目标平台：${PLATFORM}"
@@ -97,8 +91,8 @@ build:
       docker buildx build \
         --platform ${PLATFORM} \
         --build-arg NEED_MIRROR=1 \
-        --cache-from type=local,src=.cache/docker \
-        --cache-to type=local,dest=.cache/docker,mode=max \
+        --cache-from type=registry,ref=${IMAGE_NAME}:buildcache \
+        --cache-to type=registry,ref=${IMAGE_NAME}:buildcache,mode=max \
         --file ./Dockerfile \
         --tag ${IMAGE_NAME}:${IMAGE_TAG} \
         --tag ${IMAGE_NAME}:latest \
@@ -126,18 +120,12 @@ build:
     
     - echo "=== 构建和推送完成！ ==="
     - echo "镜像标签：${IMAGE_NAME}:${IMAGE_TAG}"
-    
-    # 保存缓存状态
-    - echo "=== 保存构建缓存 ==="
-    - du -sh .cache/ || echo "缓存目录大小检查失败"
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
     - if: '$CI_COMMIT_BRANCH == "production"'
   artifacts:
     reports:
       dotenv: build.env
-    paths:
-      - .cache/
     expire_in: 1 week
     when: 'on_success'
 
