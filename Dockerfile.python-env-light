@@ -1,0 +1,47 @@
+# Python 虚拟环境预构建镜像（轻量级版本）
+# 用于加速 RAGFlow 构建过程，不包含 GPU 依赖
+FROM ubuntu:22.04
+
+# 设置环境变量
+ENV PYTHON_VERSION=3.10
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LIGHTEN=1
+
+# 安装基础依赖
+RUN apt update && apt install -y \
+    python3.10 \
+    python3.10-venv \
+    python3.10-dev \
+    python3-pip \
+    curl \
+    build-essential \
+    pkg-config \
+    libicu-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 pipx 和 uv（官方推荐方式）
+RUN pip3 install pipx && \
+    pipx install uv
+ENV PATH="/root/.local/bin:${PATH}"
+
+# 设置工作目录
+WORKDIR /ragflow
+
+# 复制依赖文件
+COPY pyproject.toml uv.lock ./
+
+# 创建虚拟环境并安装依赖（轻量级版本，增加超时时间，使用镜像源）
+RUN export UV_HTTP_TIMEOUT=1200 && \
+    echo "设置 UV_HTTP_TIMEOUT=$UV_HTTP_TIMEOUT" && \
+    sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock && \
+    echo "当前 UV_HTTP_TIMEOUT: $UV_HTTP_TIMEOUT" && \
+    UV_HTTP_TIMEOUT=1200 uv sync --python 3.10 --frozen
+
+# 创建输出目录
+RUN mkdir -p /python-env
+
+# 复制虚拟环境到输出目录
+RUN cp -r .venv /python-env/
+
+# 设置输出
+VOLUME ["/python-env"] 
