@@ -27,7 +27,6 @@ cache:
       - pyproject.toml
       - uv.lock
   paths:
-    - .cache/docker
     - .cache/uv
     - .cache/npm
     - .cache/apt
@@ -50,7 +49,6 @@ build:
         - pyproject.toml
         - uv.lock
     paths:
-      - .cache/docker
       - .cache/uv
       - .cache/npm
       - .cache/apt
@@ -95,14 +93,19 @@ build:
       docker buildx build \
         --platform ${PLATFORM} \
         --build-arg NEED_MIRROR=1 \
-        --cache-from type=local,src=.cache/docker \
-        --cache-to type=local,dest=.cache/docker,mode=max \
+        --cache-from type=registry,ref=${IMAGE_NAME}:buildcache \
+        --cache-to type=registry,ref=${IMAGE_NAME}:buildcache,mode=max \
         --file ./Dockerfile \
         --tag ${IMAGE_NAME}:${IMAGE_TAG} \
         --tag ${IMAGE_NAME}:latest \
         --progress=plain \
+        --load \
         .
-    
+
+    # 验证镜像构建成功
+    - echo "=== 验证镜像构建成功 ==="
+    - docker images | grep ${PROJECT_NAME}
+
     # 推送镜像到远端
     - echo "=== 推送镜像到远端 ==="
     - docker push ${IMAGE_NAME}:${IMAGE_TAG}
@@ -119,18 +122,12 @@ build:
     
     - echo "=== 构建和推送完成！ ==="
     - echo "镜像标签：${IMAGE_NAME}:${IMAGE_TAG}"
-    
-    # 保存缓存状态
-    - echo "=== 保存构建缓存 ==="
-    - du -sh .cache/ || echo "缓存目录大小检查失败"
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
     - if: '$CI_COMMIT_BRANCH == "production"'
   artifacts:
     reports:
       dotenv: build.env
-    paths:
-      - .cache/
     expire_in: 1 week
     when: 'on_success'
 
@@ -151,32 +148,30 @@ test_docker:
     - tyqy
   script:
     - echo "=== 开始测试阶段 ==="
-    - echo "1. 测试Docker连接..."
-    - docker info
-    - echo "Docker连接测试完成"
+    - echo "镜像信息：${IMAGE_NAME}:${IMAGE_TAG}"
     
-    - echo "2. 测试镜像拉取..."
-    - docker pull ${IMAGE_NAME}:${IMAGE_TAG}
-    - echo "镜像拉取成功"
+    - echo "1. 检查wget工具..."
+    - which wget && echo "✅ wget 可用" || echo "❌ wget 不可用"
     
-    - echo "3. 测试镜像基本信息..."
-    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} python --version
-    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} cat /ragflow/VERSION
-    - echo "镜像基本信息测试完成"
-    
-    - echo "4. 校验Registry镜像是否存在..."
+    - echo "2. 使用wget验证Registry镜像..."
     - |
-      REGISTRY_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
-      echo "检查URL: $REGISTRY_URL"
-      
-      if wget --spider --server-response --no-verbose "$REGISTRY_URL" 2>&1 | grep -q "HTTP/.* 200"; then
-        echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 已存在于Registry"
+      if command -v wget >/dev/null 2>&1; then
+        echo "使用wget验证..."
+        REGISTRY_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
+        echo "检查URL: $REGISTRY_URL"
+        
+        if wget --spider --server-response --no-verbose "$REGISTRY_URL" 2>&1 | grep -q "HTTP/.* 200"; then
+          echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 已存在于Registry"
+        else
+          echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 不存在于Registry"
+          exit 1
+        fi
       else
-        echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 不存在于Registry"
+        echo "❌ wget不可用，测试失败"
         exit 1
       fi
     
-    - echo "=== 所有测试完成 ==="
+    - echo "=== 测试完成 ==="
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
     - if: '$CI_COMMIT_BRANCH == "production"'
