@@ -167,6 +167,7 @@ RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_python_env:latest,s
     echo "使用预构建的 Python 虚拟环境（完整版本）"
 
 COPY web web
+COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && npm install && npm run build
 
@@ -195,6 +196,7 @@ ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 ENV PYTHONPATH=/ragflow/
 
 COPY web web
+COPY docs docs
 COPY api api
 COPY conf conf
 COPY deepdoc deepdoc
