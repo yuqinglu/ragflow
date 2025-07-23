@@ -16,10 +16,11 @@ import os
 import pandas as pd
 
 # 全局配置初始化(模块加载时执行一次)
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'noauth_config.json')
 try:
-    with open(_CONFIG_PATH, 'r') as f:
-        CONFIG = json.load(f)
+    from api.apps.sdk.config_utils import get_noauth_config, validate_config
+    CONFIG = get_noauth_config()
+    if not validate_config(CONFIG):
+        raise ValueError("免认证配置验证失败")
     logger = logging.getLogger(__name__)
     logger.info('成功加载免认证配置')
 except Exception as e:

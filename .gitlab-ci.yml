@@ -41,6 +41,8 @@ build:
   tags:
     - shell
     - tyqy
+  # 设置超时时间为3小时（Docker构建和推送可能很慢）
+  timeout: 3 hours
   # 构建阶段专用缓存
   cache:
     key: 
@@ -136,6 +138,8 @@ build:
 test_docker:
   stage: test
   image: docker:24.0.5
+  # 设置超时时间为2小时（镜像拉取和测试可能较慢）
+  timeout: 2 hours
   services:
     - name: docker:24.0.5-dind
       command: ["--registry-mirror", "https://registry.tyqy.duckdns.org"]
@@ -185,6 +189,8 @@ test_docker:
 #   tags:
 #     - docker
 #     - tyqy
+#   # 设置超时时间为3小时（镜像拉取和部署可能较慢）
+#   timeout: 3 hours
 #   script:
 #     - echo "=== 开始部署到测试环境 ==="
 #     - echo "部署镜像：${IMAGE_NAME}:${IMAGE_TAG}"
@@ -268,6 +274,8 @@ deploy_production:
   tags:
     - deploy
     - aly3
+  # 设置超时时间为4小时（镜像拉取、推送和部署可能很慢）
+  timeout: 4 hours
   script:
     - echo "=== 开始部署到生产环境 ==="
     - echo "部署镜像：${IMAGE_NAME}:${IMAGE_TAG}"

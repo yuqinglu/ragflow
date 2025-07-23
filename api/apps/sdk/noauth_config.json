@@ -1,7 +1,0 @@
-{
-  "tenant_id": "a128a194190911f089ad85162265e498",
-  "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
-  "kb_ids": ["d626afca24d111f0bce1a0369f72b8b4"],
-  "llm_id": "qwen-plus-latest@Tongyi-Qianwen",
-  "operational_report_kb_id": "7d0234325dfc11f0b60da0369f72b8b4"
-}
