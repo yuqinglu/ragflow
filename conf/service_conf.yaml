@@ -105,3 +105,15 @@ redis:
 #   switch: false
 #   component: false
 #   dataset: false
+# 免认证API配置
+noauth_api:
+  # 租户ID
+  tenant_id: 'a128a194190911f089ad85162265e498'
+  # 嵌入模型
+  embedding_model: 'BAAI/bge-large-zh-v1.5@BAAI'
+  # 知识库ID列表
+  kb_ids: ["d626afca24d111f0bce1a0369f72b8b4"]
+  # LLM模型ID
+  llm_id: 'qwen-plus-latest@Tongyi-Qianwen'
+  # 运维报告知识库ID
+  operational_report_kb_id: '7d0234325dfc11f0b60da0369f72b8b4'
