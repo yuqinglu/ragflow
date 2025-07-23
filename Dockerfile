@@ -213,6 +213,12 @@ COPY plugin plugin
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
+RUN echo "=== 验证service_conf.yaml.template文件 ===" && \
+    ls -la ./conf/service_conf.yaml.template && \
+    echo "=== 文件内容预览 ===" && \
+    head -20 ./conf/service_conf.yaml.template && \
+    echo "=== 检查noauth_api配置 ===" && \
+    grep -A 10 "noauth_api:" ./conf/service_conf.yaml.template || echo "未找到noauth_api配置"
 RUN chmod +x ./entrypoint*.sh
 
 # Copy compiled web pages
