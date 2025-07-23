@@ -291,26 +291,21 @@ deploy_production:
     - echo "源镜像：${SOURCE_IMAGE}"
     - echo "目标镜像：${TARGET_IMAGE}"
     
-    # 在sudo环境中执行镜像操作
-    - |
-      sudo bash -c "
-        set -e
-        
-        echo '正在拉取源镜像：${SOURCE_IMAGE}'
-        docker pull ${SOURCE_IMAGE}
-        
-        echo '正在给镜像打标签：${TARGET_IMAGE}'
-        docker tag ${SOURCE_IMAGE} ${TARGET_IMAGE}
-        
-        echo '正在推送到阿里云ACR：${TARGET_IMAGE}'
-        docker push ${TARGET_IMAGE}
-        
-        echo '正在推送latest标签'
-        docker tag ${SOURCE_IMAGE} ${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:latest
-        docker push ${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:latest
-        
-        echo '镜像复制完成'
-      "
+    # 执行镜像操作
+    - echo '正在拉取源镜像：${SOURCE_IMAGE}'
+    - docker pull ${SOURCE_IMAGE}
+    
+    - echo '正在给镜像打标签：${TARGET_IMAGE}'
+    - docker tag ${SOURCE_IMAGE} ${TARGET_IMAGE}
+    
+    - echo '正在推送到阿里云ACR：${TARGET_IMAGE}'
+    - docker push ${TARGET_IMAGE}
+    
+    - echo '正在推送latest标签'
+    - docker tag ${SOURCE_IMAGE} ${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:latest
+    - docker push ${TARGET_REGISTRY}/${TARGET_NAMESPACE}/${PROJECT_NAME}:latest
+    
+    - echo '镜像复制完成'
     
     - echo "=== 镜像复制完成 ==="
     - echo "镜像已推送到：${TARGET_IMAGE}"
