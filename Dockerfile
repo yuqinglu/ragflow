@@ -163,8 +163,11 @@ USER root
 WORKDIR /ragflow
 
 # 使用预构建的 Python 虚拟环境
-RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_python_env:latest,source=/python-env/.venv,target=/ragflow/.venv \
-    echo "使用预构建的 Python 虚拟环境（完整版本）"
+RUN --mount=type=bind,from=registry.tyqy.duckdns.org/ragflow_python_env:latest,source=/python-env,target=/temp-python-env \
+    echo "使用预构建的 Python 虚拟环境（完整版本）" && \
+    ls -la /temp-python-env/ && \
+    cp -r /temp-python-env/.venv /ragflow/.venv && \
+    ls -la /ragflow/.venv/bin/python
 
 COPY web web
 COPY docs docs
