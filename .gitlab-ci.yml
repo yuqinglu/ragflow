@@ -69,6 +69,10 @@ build:
     # 运行构建优化脚本
     - echo "=== 运行构建优化脚本 ==="
     - bash scripts/optimize_build.sh
+    
+    # 创建缓存目录
+    - echo "=== 创建缓存目录 ==="
+    - mkdir -p .cache/docker
   script:
     - echo "=== 开始构建RAGFlow Docker镜像 ==="
     - echo "目标平台：${PLATFORM}"
@@ -99,7 +103,12 @@ build:
         --tag ${IMAGE_NAME}:${IMAGE_TAG} \
         --tag ${IMAGE_NAME}:latest \
         --progress=plain \
+        --load \
         .
+    
+    # 验证镜像构建成功
+    - echo "=== 验证镜像构建成功 ==="
+    - docker images | grep ${PROJECT_NAME}
     
     # 推送镜像到远端
     - echo "=== 推送镜像到远端 ==="
