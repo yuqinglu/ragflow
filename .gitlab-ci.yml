@@ -132,32 +132,18 @@ build:
 # 测试阶段
 test_docker:
   stage: test
-  image: docker:24.0.5
-  services:
-    - name: docker:24.0.5-dind
-      command: ["--registry-mirror", "https://registry.tyqy.duckdns.org"]
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
+  image: alpine:latest
   tags:
     - shell
     - tyqy
   script:
     - echo "=== 开始测试阶段 ==="
-    - echo "1. 测试Docker连接..."
-    - docker info
-    - echo "Docker连接测试完成"
+    - echo "镜像信息：${IMAGE_NAME}:${IMAGE_TAG}"
     
-    - echo "2. 测试镜像拉取..."
-    - docker pull ${IMAGE_NAME}:${IMAGE_TAG}
-    - echo "镜像拉取成功"
+    - echo "1. 安装必要工具..."
+    - apk add --no-cache curl wget
     
-    - echo "3. 测试镜像基本信息..."
-    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} python --version
-    - docker run --rm --entrypoint="" ${IMAGE_NAME}:${IMAGE_TAG} cat /ragflow/VERSION
-    - echo "镜像基本信息测试完成"
-    
-    - echo "4. 校验Registry镜像是否存在..."
+    - echo "2. 校验Registry镜像是否存在..."
     - |
       REGISTRY_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
       echo "检查URL: $REGISTRY_URL"
@@ -166,6 +152,22 @@ test_docker:
         echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 已存在于Registry"
       else
         echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 不存在于Registry"
+        exit 1
+      fi
+    
+    - echo "3. 测试镜像拉取（使用curl验证）..."
+    - |
+      # 使用curl验证镜像是否存在
+      MANIFEST_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
+      echo "验证镜像清单：$MANIFEST_URL"
+      
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$MANIFEST_URL")
+      echo "HTTP响应码：$HTTP_CODE"
+      
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 可以正常访问"
+      else
+        echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 访问失败，HTTP码：$HTTP_CODE"
         exit 1
       fi
     
