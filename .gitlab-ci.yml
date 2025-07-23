@@ -267,8 +267,8 @@ test_docker:
 deploy_production:
   stage: deploy
   tags:
-    - deploy
-    - aly3
+    - shell
+    - tyqy
   # 设置超时时间为4小时（镜像拉取、推送和部署可能很慢）
   timeout: 4 hours
   script:
