@@ -132,7 +132,6 @@ build:
 # 测试阶段
 test_docker:
   stage: test
-  image: alpine:latest
   tags:
     - shell
     - tyqy
@@ -140,38 +139,28 @@ test_docker:
     - echo "=== 开始测试阶段 ==="
     - echo "镜像信息：${IMAGE_NAME}:${IMAGE_TAG}"
     
-    - echo "1. 安装必要工具..."
-    - apk add --no-cache curl wget
+    - echo "1. 检查wget工具..."
+    - which wget && echo "✅ wget 可用" || echo "❌ wget 不可用"
     
-    - echo "2. 校验Registry镜像是否存在..."
+    - echo "2. 使用wget验证Registry镜像..."
     - |
-      REGISTRY_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
-      echo "检查URL: $REGISTRY_URL"
-      
-      if wget --spider --server-response --no-verbose "$REGISTRY_URL" 2>&1 | grep -q "HTTP/.* 200"; then
-        echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 已存在于Registry"
+      if command -v wget >/dev/null 2>&1; then
+        echo "使用wget验证..."
+        REGISTRY_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
+        echo "检查URL: $REGISTRY_URL"
+        
+        if wget --spider --server-response --no-verbose "$REGISTRY_URL" 2>&1 | grep -q "HTTP/.* 200"; then
+          echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 已存在于Registry"
+        else
+          echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 不存在于Registry"
+          exit 1
+        fi
       else
-        echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 不存在于Registry"
+        echo "❌ wget不可用，测试失败"
         exit 1
       fi
     
-    - echo "3. 测试镜像拉取（使用curl验证）..."
-    - |
-      # 使用curl验证镜像是否存在
-      MANIFEST_URL="https://${REGISTRY}/v2/${PROJECT_NAME}/manifests/${IMAGE_TAG}"
-      echo "验证镜像清单：$MANIFEST_URL"
-      
-      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$MANIFEST_URL")
-      echo "HTTP响应码：$HTTP_CODE"
-      
-      if [ "$HTTP_CODE" = "200" ]; then
-        echo "✅ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 可以正常访问"
-      else
-        echo "❌ 镜像 ${IMAGE_NAME}:${IMAGE_TAG} 访问失败，HTTP码：$HTTP_CODE"
-        exit 1
-      fi
-    
-    - echo "=== 所有测试完成 ==="
+    - echo "=== 测试完成 ==="
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
     - if: '$CI_COMMIT_BRANCH == "production"'
