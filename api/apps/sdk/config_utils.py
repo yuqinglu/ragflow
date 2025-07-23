@@ -26,11 +26,44 @@ def get_noauth_config() -> Dict[str, Any]:
         
         # 处理kb_ids，如果是字符串则解析为列表
         kb_ids = noauth_config.get('kb_ids', [])
+        logger.info(f"原始kb_ids值: {kb_ids} (类型: {type(kb_ids)})")
+        
         if isinstance(kb_ids, str):
+            # 清理字符串，去除可能的引号和空白字符
+            kb_ids_clean = kb_ids.strip().strip('"').strip("'")
+            
+            # 如果是YAML格式的键值对，提取值部分
+            if ':' in kb_ids_clean:
+                parts = kb_ids_clean.split(':', 1)
+                if len(parts) == 2:
+                    kb_ids_clean = parts[1].strip()
+                    logger.info(f"提取的值部分: {kb_ids_clean}")
+            
+            # 尝试修复常见的JSON格式问题
+            original_kb_ids_clean = kb_ids_clean
+            
+            # 问题1: 数组元素缺少双引号，如 [item1, item2] -> ["item1", "item2"]
+            if kb_ids_clean.startswith('[') and kb_ids_clean.endswith(']'):
+                # 检查是否所有元素都有双引号
+                if '"' not in kb_ids_clean:
+                    logger.info("检测到数组元素缺少双引号，尝试修复...")
+                    # 提取数组内容
+                    content = kb_ids_clean[1:-1]  # 去掉 [ 和 ]
+                    if content.strip():
+                        # 分割元素并添加双引号
+                        items = [item.strip() for item in content.split(',') if item.strip()]
+                        kb_ids_clean = '[' + ','.join(f'"{item}"' for item in items) + ']'
+                        logger.info(f"修复后的格式: {kb_ids_clean}")
+            
             try:
-                kb_ids = json.loads(kb_ids)
+                kb_ids = json.loads(kb_ids_clean)
+                logger.info(f"JSON解析成功: {kb_ids}")
             except json.JSONDecodeError as e:
                 logger.error(f"解析kb_ids失败: {e}")
+                logger.error(f"原始值: '{original_kb_ids_clean}'")
+                logger.error(f"修复后值: '{kb_ids_clean}'")
+                logger.error(f"值长度: {len(kb_ids_clean)}")
+                logger.error(f"值字节: {repr(kb_ids_clean)}")
                 kb_ids = []
         
         # 构建配置字典

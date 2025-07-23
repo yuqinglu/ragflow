@@ -131,7 +131,7 @@ noauth_api:
   # 嵌入模型
   embedding_model: '${NOAUTH_EMBEDDING_MODEL:-BAAI/bge-large-zh-v1.5@BAAI}'
   # 知识库ID列表
-  kb_ids: '${NOAUTH_KB_IDS:-["d626afca24d111f0bce1a0369f72b8b4"]}'
+  kb_ids: ${NOAUTH_KB_IDS:-'["d626afca24d111f0bce1a0369f72b8b4"]'}
   # LLM模型ID
   llm_id: '${NOAUTH_LLM_ID:-qwen-plus-latest@Tongyi-Qianwen}'
   # 运维报告知识库ID
