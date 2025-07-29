@@ -44,3 +44,4 @@ nltk_data/
 .lh/
 .venv
 docker/data
+docker/neo4j

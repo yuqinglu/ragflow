@@ -1,102 +1,191 @@
 # RAGFlow 服务启动指南
 
+> 本文档提供了 RAGFlow 服务的完整启动指南，包括开发环境、生产环境和 CI/CD 部署流程。
 
+## 📋 目录
+
+- [环境准备](#环境准备)
+- [开发环境启动](#开发环境启动)
+- [Docker 容器启动](#docker-容器启动)
+- [CI/CD 部署流程](#cicd-部署流程)
+
+## 🔧 环境准备
+
+### 依赖管理
+```bash
+# 升级 uv.lock 配置文件
 uv lock --upgrade
-
-sudo账号安装pyicu依赖
-sudo apt install libicu-dev python3-icu pkg-config
-sh uv-installer.sh
-#根据uv提示，配置uv路径
-#配置python环境
-uv sync --python 3.10 --all-extras
-若uv安装并发太多，可以在pyproject.toml中进行配置修改
-uv run download_deps.py
-
-检查docker/.env的配置和conf中的service_conf.yaml中的配置是否吻合
-
-管理员权限安装libjemalloc
-apt install libjemalloc-dev
-
-#验证jemalloc
-JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
-
-#安装libglib相关依赖
-apt install -y libglib2.0-0 libglx-mesa0 libgl1 
-apt install libodbc2
-
-python api/ragflow_server.py 
-
-#拷贝依赖的rag/res下的模型到路径上
-
-## 源代码启动
-# 由于pyicu安装太麻烦，目前pptx解析存在问题，需要转成pdf
-```bash
-JEMALLOC_PATH=~/jemalloc/lib/libjemalloc.so
-export PYTHONPATH=$(pwd)
-
-#启动task_executor
-LANG=zh_CN.UTF-8 LD_PRELOAD=$JEMALLOC_PATH  DOC_ENGINE=infinity python rag/svr/task_executor.py 1 --debug
-
-
-#启动ragflow_server
-LANG=zh_CN.UTF-8 LD_LIBRARY_PATH="$HOME/local/openssl/lib64:$LD_LIBRARY_PATH" DOC_ENGINE=infinity python api/ragflow_server.py --debug
-
-#启动web
-cd web
-npm run dev
-
 ```
 
-## 容器启动命令
+### 系统要求
+- **操作系统**: Linux/macOS/Windows
+- **Docker**: 20.10+ (容器部署)
+- **Node.js**: 18+ (前端开发)
+- **Python**: 3.8+ (后端开发)
+- **内存**: 最低 4GB，推荐 8GB+
+- **存储**: 最低 10GB 可用空间
 
+## 🚀 开发环境启动
+
+### 前端服务启动
 ```bash
-# 进入docker目录
-cd ragflow/docker
+# 启动前端开发服务器
+npx pm2 start ragflow-web
 
-# 标准CPU启动（默认）
-docker compose -f docker-compose.yml up -d
+# 查看前端服务状态
+npx pm2 status
 
-# GPU加速启动（需要NVIDIA驱动）
-docker compose -f docker-compose-gpu.yml up -d
+# 查看前端日志
+npx pm2 logs ragflow-web
 ```
 
-## 服务健康检查
-
+### 后端服务启动
 ```bash
-# 查看ragflow-server日志
-docker logs -f ragflow-server
+# 1. 启动依赖服务
+docker compose -f docker-compose-base.yml up -d
 
+# 2. 启动任务处理服务
+sh run_task
+
+# 3. 启动主服务器
+sh run_server
+```
+
+### 开发环境验证
+```bash
 # 检查服务状态
-docker ps | grep 'ragflow\|minio\|mysql'
+curl http://localhost:9380/health
+
+# 检查前端访问
+curl http://localhost:3000
 ```
 
-## 环境变量覆盖示例
+## 🐳 Docker 容器启动
 
+### 进入 Docker 目录
 ```bash
-# 修改服务端口为8080
-export SVR_HTTP_PORT=8080
+cd ragflow/docker
+```
 
-# 设置系统语言环境
-export LANG=zh_CN.UTF-8
-
+### CPU 版本启动（推荐用于开发/测试）
+```bash
+# 标准 CPU 启动（默认配置）
 docker compose -f docker-compose.yml up -d
+
+# 查看容器状态
+docker compose -f docker-compose.yml ps
+
+# 查看服务日志
+docker compose -f docker-compose.yml logs -f
 ```
 
-## 常用维护命令
-
+### GPU 版本启动（推荐用于生产环境）
 ```bash
-# 停止所有服务
+# GPU 加速启动（需要 NVIDIA 驱动和 Docker GPU 支持）
+docker compose -f docker-compose-gpu.yml up -d
+
+# 验证 GPU 支持
+docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
+```
+
+### Docker 环境管理
+```bash
+# 停止服务
 docker compose -f docker-compose.yml down
 
-# 重建单个服务
-docker compose -f docker-compose.yml up -d --no-deps --build ragflow-server
+# 重启服务
+docker compose -f docker-compose.yml restart
 
-# 查看实时日志
-docker compose logs -f
+# 清理数据（谨慎使用）
+docker compose -f docker-compose.yml down -v
+
+# 更新镜像并重启
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml up -d
 ```
 
-## 文件路径说明
-- 配置文件：docker/.env
-- 服务配置模板：docker/service_conf.yaml.template
-- MySQL数据卷：docker/mysql_data
-- MinIO数据卷：docker/minio_data
+## 🔄 CI/CD 部署流程
+
+### 1. 代码管理
+```bash
+# 在其他分支上进行研发
+git checkout feature/new-feature
+# ... 开发工作 ...
+
+# 合并到开发分支
+git checkout dev
+git merge feature/new-feature
+
+# 合并到生产分支
+git checkout production
+git merge dev
+```
+
+### 2. 自动部署触发
+- 推送到 `dev` 分支触发开发环境部署
+- 推送到 `production` 分支触发生产环境部署
+
+### 3. 阿里云部署平台配置
+
+#### 环境参数配置
+```yaml
+# 数据库配置
+DB_HOST: your-db-host
+DB_PORT: 3306
+DB_NAME: ragflow
+DB_USER: ragflow_user
+DB_PASSWORD: your-password
+
+# Redis 配置
+REDIS_HOST: your-redis-host
+REDIS_PORT: 6379
+REDIS_PASSWORD: your-redis-password
+
+# 对象存储配置
+OSS_ACCESS_KEY: your-access-key
+OSS_SECRET_KEY: your-secret-key
+OSS_BUCKET: ragflow-bucket
+OSS_ENDPOINT: your-oss-endpoint
+
+# 其他配置
+NODE_ENV: production
+LOG_LEVEL: info
+```
+
+#### Docker 运行命令
+```bash
+# 生产环境启动命令
+docker run -d \
+  --name ragflow-production \
+  -p 9380:9380 \
+  -e DB_HOST=$DB_HOST \
+  -e DB_PORT=$DB_PORT \
+  -e DB_NAME=$DB_NAME \
+  -e DB_USER=$DB_USER \
+  -e DB_PASSWORD=$DB_PASSWORD \
+  -e REDIS_HOST=$REDIS_HOST \
+  -e REDIS_PORT=$REDIS_PORT \
+  -e REDIS_PASSWORD=$REDIS_PASSWORD \
+  -e OSS_ACCESS_KEY=$OSS_ACCESS_KEY \
+  -e OSS_SECRET_KEY=$OSS_SECRET_KEY \
+  -e OSS_BUCKET=$OSS_BUCKET \
+  -e OSS_ENDPOINT=$OSS_ENDPOINT \
+  -e NODE_ENV=production \
+  -e LOG_LEVEL=info \
+  ragflow/ragflow:latest
+```
+
+### 4. 部署后检查
+```bash
+# 检查容器状态
+docker ps | grep ragflow
+
+# 检查服务健康状态
+curl http://your-domain:9380/health
+
+# 检查后台日志
+docker logs ragflow-production -f
+
+# 检查资源使用情况
+docker stats ragflow-production
+```
