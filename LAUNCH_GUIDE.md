@@ -67,6 +67,11 @@ curl http://localhost:3000
 cd ragflow/docker
 ```
 
+提前构建python环境镜像
+```bash
+./scripts/build_python_env.sh --full
+```
+
 ### CPU 版本启动（推荐用于开发/测试）
 ```bash
 # 标准 CPU 启动（默认配置）
