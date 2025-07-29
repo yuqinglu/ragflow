@@ -118,6 +118,19 @@ class RedisDB:
             logging.warning(f"Redis can't be connected: {e}")
         return self.REDIS
 
+    def _retry_operation(self, operation, max_retries=3):
+        """重试Redis操作的辅助方法"""
+        for attempt in range(max_retries):
+            try:
+                return operation()
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logging.warning(f"Redis operation failed after {max_retries} attempts: {e}")
+                    return None
+                logging.warning(f"Redis operation failed (attempt {attempt + 1}/{max_retries}): {e}")
+                time.sleep(0.1)  # 短暂延迟后重试
+        return None
+
     def health(self):
         try:
             def _ping_operation():

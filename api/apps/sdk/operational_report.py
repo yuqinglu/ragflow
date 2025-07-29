@@ -54,6 +54,24 @@ def validate_required_fields(data, required_fields):
     return True, None
 
 
+def convert_user_id_to_string(user_id):
+    """将用户ID转换为字符串类型，兼容bigint和string类型"""
+    if user_id is None:
+        return None
+    return str(user_id)
+
+
+def convert_user_id_to_int(user_id):
+    """将用户ID转换为整数类型，用于输出时兼容bigint类型"""
+    if user_id is None:
+        return None
+    try:
+        return int(user_id)
+    except (ValueError, TypeError):
+        # 如果无法转换为整数，返回原始值
+        return user_id
+
+
 def validate_report_id(report_id):
     """验证report_id是否为有效的整数"""
     if not isinstance(report_id, int):
@@ -128,12 +146,15 @@ def upsert_report():
     if not isinstance(req["report_data"], dict):
         return jsonify({"error": "Report data must be a JSON object!"}), 400
     
+    # 转换用户ID为字符串类型，兼容bigint输入
+    created_by = convert_user_id_to_string(req["user_id"])
+    
     # Create or update report
     report, action = OperationalReportService.upsert_report(
         report_id=report_id,
         kb_id=get_kb_id(),
         report_data=req["report_data"],
-        created_by=req["user_id"],
+        created_by=created_by,
         report_status=req["report_status"]
     )
     
@@ -244,10 +265,13 @@ def delete_report():
     
     report_id = req["report_id"]
     
+    # 转换用户ID为字符串类型，兼容bigint输入
+    user_id = convert_user_id_to_string(req["user_id"])
+    
     # Delete report
     success = OperationalReportService.delete_report(
         report_id=report_id,
-        user_id=req["user_id"]
+        user_id=user_id
     )
     
     if success:
@@ -298,7 +322,11 @@ def get_report(report_id):
     )
     
     if report:
-        return jsonify(report.to_dict())
+        # 转换输出数据，将created_by转换为整数类型以兼容bigint
+        report_dict = report.to_dict()
+        if "created_by" in report_dict:
+            report_dict["created_by"] = convert_user_id_to_int(report_dict["created_by"])
+        return jsonify(report_dict)
     else:
         return jsonify({"error": "Report not found or access denied!"}), 400
 
@@ -357,6 +385,12 @@ def list_reports():
         orderby=orderby,
         desc=desc
     )
+    
+    # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
+    if reports:
+        for report in reports:
+            if "created_by" in report:
+                report["created_by"] = convert_user_id_to_int(report["created_by"])
     
     return jsonify({
         "reports": reports,
@@ -427,6 +461,12 @@ def vector_search_reports():
         similarity_threshold=similarity_threshold,
         vector_similarity_weight=vector_similarity_weight
     )
+    
+    # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
+    if results.get("reports"):
+        for report in results["reports"]:
+            if "created_by" in report:
+                report["created_by"] = convert_user_id_to_int(report["created_by"])
     
     return jsonify({
         "reports": results["reports"],
@@ -519,10 +559,20 @@ def find_similar_reports(report_id):
         if r["report"]["id"] != report_id_int
     ][:limit]
     
+    # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
+    for similar_report in similar_reports:
+        if "created_by" in similar_report:
+            similar_report["created_by"] = convert_user_id_to_int(similar_report["created_by"])
+    
+    # 转换参考报告的created_by
+    reference_report_dict = report.to_dict()
+    if "created_by" in reference_report_dict:
+        reference_report_dict["created_by"] = convert_user_id_to_int(reference_report_dict["created_by"])
+    
     return jsonify({
         "similar_reports": similar_reports,
         "total": len(similar_reports),
-        "reference_report": report.to_dict()
+        "reference_report": reference_report_dict
     })
 
 
