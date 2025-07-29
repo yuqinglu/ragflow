@@ -510,7 +510,7 @@ class OperationalReportService(CommonService):
                 affected_rows = query.execute()
                 
                 if affected_rows > 0:
-                    success_updates.append({"id": report_id, "status": new_status})
+                    success_updates.append({"id": report_id, "report_status": new_status})
                 else:
                     failed_updates.append({"id": report_id, "error": "Report not found"})
                     
