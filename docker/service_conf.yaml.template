@@ -42,7 +42,7 @@ redis:
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
   # 可选：如果配置了user，将使用用户名+密码认证
-  # user: '${REDIS_USER:-}'
+  user: '${REDIS_USER:-}'
 
 # postgres:
 #   name: '${POSTGRES_DBNAME:-rag_flow}'

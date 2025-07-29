@@ -39,29 +39,35 @@ class RAGFlowMinio:
 
         try:
             # 内部连接 - 用于文件操作
-            self.conn = Minio(settings.MINIO["host"],
+            # 直接使用配置文件中的host，不添加端口
+            host = settings.MINIO["host"]
+            
+            self.conn = Minio(host,
                               access_key=settings.MINIO["user"],
                               secret_key=settings.MINIO["password"],
-                              secure=False
+                              secure=True
                               )
             
             # 外部连接 - 用于生成预签名URL
             if "external_host" in settings.MINIO and settings.MINIO["external_host"]:
+                external_host = settings.MINIO["external_host"]
                 external_secure = settings.MINIO.get("external_secure", True)
-                self.external_conn = Minio(settings.MINIO["external_host"],
+                
+                # 直接使用配置文件中的external_host，不添加端口
+                self.external_conn = Minio(external_host,
                                           access_key=settings.MINIO["user"],
                                           secret_key=settings.MINIO["password"],
                                           secure=external_secure
                                           )
-                logging.info(f"External MinIO connection configured: {settings.MINIO['external_host']} (secure: {external_secure})")
+                logging.info(f"External MinIO connection configured: {external_host} (secure: {external_secure})")
             else:
                 # 如果没有配置外部域名，使用内部连接
                 self.external_conn = self.conn
                 logging.info("No external MinIO host configured, using internal connection for presigned URLs")
                 
-        except Exception:
-            logging.exception(
-                "Fail to connect %s " % settings.MINIO["host"])
+        except Exception as e:
+            logging.exception(f"Fail to connect to MinIO host: {settings.MINIO.get('host', 'unknown')}")
+            logging.error(f"MinIO connection error: {str(e)}")
 
     def __close__(self):
         del self.conn
@@ -81,7 +87,7 @@ class RAGFlowMinio:
         return r
 
     def put(self, bucket, fnm, binary):
-        for _ in range(3):
+        for attempt in range(3):
             try:
                 if not self.conn.bucket_exists(bucket):
                     self.conn.make_bucket(bucket)
@@ -91,10 +97,20 @@ class RAGFlowMinio:
                                          len(binary)
                                          )
                 return r
-            except Exception:
-                logging.exception(f"Fail to put {bucket}/{fnm}:")
-                self.__open__()
-                time.sleep(1)
+            except S3Error as e:
+                logging.error(f"MinIO S3Error on attempt {attempt + 1}: {e.code} - {e.message}")
+                if e.code == "AccessDenied":
+                    logging.error(f"Access denied for bucket: {bucket}. Please check MinIO credentials and permissions.")
+                    # 对于访问拒绝错误，不要重试
+                    break
+                elif attempt < 2:  # 最后一次尝试不重试
+                    self.__open__()
+                    time.sleep(1)
+            except Exception as e:
+                logging.exception(f"Fail to put {bucket}/{fnm} on attempt {attempt + 1}:")
+                if attempt < 2:  # 最后一次尝试不重试
+                    self.__open__()
+                    time.sleep(1)
 
     def rm(self, bucket, fnm):
         try:
@@ -103,14 +119,23 @@ class RAGFlowMinio:
             logging.exception(f"Fail to remove {bucket}/{fnm}:")
 
     def get(self, bucket, filename):
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 r = self.conn.get_object(bucket, filename)
                 return r.read()
-            except Exception:
-                logging.exception(f"Fail to get {bucket}/{filename}")
-                self.__open__()
-                time.sleep(1)
+            except S3Error as e:
+                logging.error(f"MinIO S3Error on get attempt {attempt + 1}: {e.code} - {e.message}")
+                if e.code == "AccessDenied":
+                    logging.error(f"Access denied for bucket: {bucket}. Please check MinIO credentials and permissions.")
+                    break
+                elif attempt < 2:
+                    self.__open__()
+                    time.sleep(1)
+            except Exception as e:
+                logging.exception(f"Fail to get {bucket}/{filename} on attempt {attempt + 1}")
+                if attempt < 2:
+                    self.__open__()
+                    time.sleep(1)
         return
 
     def obj_exist(self, bucket, filename):
@@ -124,18 +149,30 @@ class RAGFlowMinio:
         except S3Error as e:
             if e.code in ["NoSuchKey", "NoSuchBucket", "ResourceNotFound"]:
                 return False
+            elif e.code == "AccessDenied":
+                logging.error(f"Access denied checking object existence: {bucket}/{filename}")
+                return False
         except Exception:
             logging.exception(f"obj_exist {bucket}/{filename} got exception")
             return False
 
     def get_presigned_url(self, bucket, fnm, expires, response_headers=None):
-        for _ in range(10):
+        for attempt in range(10):
             try:
                 # 使用外部连接生成预签名URL
                 return self.external_conn.get_presigned_url("GET", bucket, fnm, expires, response_headers=response_headers)
-            except Exception:
-                logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
-                self.__open__()
-                time.sleep(1)
+            except S3Error as e:
+                logging.error(f"MinIO S3Error on presigned URL attempt {attempt + 1}: {e.code} - {e.message}")
+                if e.code == "AccessDenied":
+                    logging.error(f"Access denied generating presigned URL for: {bucket}/{fnm}")
+                    break
+                elif attempt < 9:
+                    self.__open__()
+                    time.sleep(1)
+            except Exception as e:
+                logging.exception(f"Fail to get_presigned {bucket}/{fnm} on attempt {attempt + 1}:")
+                if attempt < 9:
+                    self.__open__()
+                    time.sleep(1)
         return
 

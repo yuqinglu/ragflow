@@ -810,16 +810,15 @@ class Figure(DataBaseModel):
         db_table = "figure"
 
 class OperationalReport(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
+    id = BigIntegerField(primary_key=True)
     kb_id = CharField(max_length=64, null=False, help_text="knowledge base id", index=True)
-    title = CharField(max_length=255, null=False, help_text="report title", index=True)
     report_data = JSONField(null=False, default={}, help_text="report data in json format")
     created_by = CharField(max_length=255, null=False, help_text="who created it", index=True)
-    group_id = CharField(max_length=255, null=True, help_text="group id for access control", index=True)
+    report_status = CharField(max_length=32, null=False, default="未提交", help_text="报告状态：未提交，已提交，待审核，已生效，已驳回，已失效，已删除", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
     
     def __str__(self):
-        return self.title
+        return f"Report {self.id}"
     
     class Meta:
         db_table = "operational_report"
@@ -905,6 +904,18 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("task", "priority", IntegerField(default=0)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("operational_report", "report_status", CharField(max_length=32, null=False, default="未提交", help_text="报告状态：未提交，已提交，待审核，已生效，已驳回，已失效，已删除", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.drop_column("operational_report", "title"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.drop_column("operational_report", "group_id"))
     except Exception:
         pass
     try:
