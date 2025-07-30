@@ -483,15 +483,19 @@ class OperationalReportService(CommonService):
                     success = query.execute() > 0
                     
                     if success:
-                        # Re-vectorize if content changed
-                        if need_re_vectorize:
+                        # 如果状态变更为"已删除"，从向量数据库中删除
+                        if report_status == "已删除":
+                            cls._remove_from_vector_store(report_id, kb_info)
+                            logging.info(f"Report {report_id} status changed to '已删除', removed from vector store")
+                        # Re-vectorize if content changed and not deleted
+                        elif need_re_vectorize:
                             # Remove old vector and add new one
                             cls._remove_from_vector_store(report_id, kb_info)
                             # Get updated report
                             updated_report = cls.model.get_by_id(report_id)
                             cls._vectorize_and_store(updated_report, kb_info)
                         
-                        return updated_report, "updated"
+                        return cls.model.get_by_id(report_id), "updated"
                     else:
                         raise ValueError("Failed to update report")
                 else:
@@ -555,6 +559,18 @@ class OperationalReportService(CommonService):
                 affected_rows = query.execute()
                 
                 if affected_rows > 0:
+                    # 如果状态变更为"已删除"，从向量数据库中删除
+                    if new_status == "已删除":
+                        # 获取报告信息以获取kb_id
+                        try:
+                            report = cls.model.get_by_id(report_id)
+                            if report:
+                                exists, kb_info = KnowledgebaseService.get_by_id(report.kb_id)
+                                if exists:
+                                    cls._remove_from_vector_store(report_id, kb_info)
+                        except Exception as e:
+                            logging.error(f"Failed to remove report {report_id} from vector store: {e}")
+                    
                     success_updates.append({"id": report_id, "report_status": new_status})
                 else:
                     failed_updates.append({"id": report_id, "error": "Report not found"})
