@@ -74,6 +74,15 @@ def convert_user_id_to_int(user_id):
         return user_id
 
 
+def convert_created_by_to_user_id(report_dict):
+    """将报告字典中的created_by字段转换为user_id字段，并确保类型为整数"""
+    if "created_by" in report_dict:
+        user_id = convert_user_id_to_int(report_dict["created_by"])
+        report_dict["user_id"] = user_id
+        del report_dict["created_by"]
+    return report_dict
+
+
 def validate_report_id(report_id):
     """验证report_id是否为有效的整数"""
     if not isinstance(report_id, int):
@@ -324,10 +333,9 @@ def get_report(report_id):
     )
     
     if report:
-        # 转换输出数据，将created_by转换为整数类型以兼容bigint
+        # 转换输出数据，将created_by转换为user_id并确保类型为整数
         report_dict = report.to_dict()
-        if "created_by" in report_dict:
-            report_dict["created_by"] = convert_user_id_to_int(report_dict["created_by"])
+        report_dict = convert_created_by_to_user_id(report_dict)
         return jsonify(report_dict)
     else:
         return jsonify({"error": "Report not found or access denied!"}), 400
@@ -388,11 +396,10 @@ def list_reports():
         desc=desc
     )
     
-    # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
+    # 转换输出数据，将每个报告的created_by转换为user_id并确保类型为整数
     if reports:
         for report in reports:
-            if "created_by" in report:
-                report["created_by"] = convert_user_id_to_int(report["created_by"])
+            report = convert_created_by_to_user_id(report)
     
     return jsonify({
         "reports": reports,
@@ -464,11 +471,11 @@ def vector_search_reports():
         vector_similarity_weight=vector_similarity_weight
     )
 
-    # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
+    # 转换输出数据，将每个报告的created_by转换为user_id并确保类型为整数
     if results.get("reports"):
-        for report in results["reports"]:
-            if "created_by" in report:
-                report["created_by"] = convert_user_id_to_int(report["created_by"])
+        for report_item in results["reports"]:
+            if "report" in report_item:
+                report_item["report"] = convert_created_by_to_user_id(report_item["report"])
     
     return jsonify({
         "reports": results["reports"],
@@ -561,15 +568,14 @@ def find_similar_reports(report_id):
         if r["report"]["id"] != report_id_int
     ][:limit]
     
-    # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
+    # 转换输出数据，将每个报告的created_by转换为user_id并确保类型为整数
     for similar_report in similar_reports:
-        if "created_by" in similar_report:
-            similar_report["created_by"] = convert_user_id_to_int(similar_report["created_by"])
+        if "report" in similar_report:
+            similar_report["report"] = convert_created_by_to_user_id(similar_report["report"])
     
     # 转换参考报告的created_by
     reference_report_dict = report.to_dict()
-    if "created_by" in reference_report_dict:
-        reference_report_dict["created_by"] = convert_user_id_to_int(reference_report_dict["created_by"])
+    reference_report_dict = convert_created_by_to_user_id(reference_report_dict)
     
     return jsonify({
         "similar_reports": similar_reports,
