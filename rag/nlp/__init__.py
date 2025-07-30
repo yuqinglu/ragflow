@@ -701,3 +701,6 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
 def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
     return re.findall(pattern, text, flags=re.DOTALL)
+
+# 导出search模块
+from . import search

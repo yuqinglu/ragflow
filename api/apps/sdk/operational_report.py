@@ -21,6 +21,8 @@ from functools import wraps
 
 from api.db.services.operational_report_service import OperationalReportService
 from api.apps.sdk.config_utils import get_noauth_config, validate_config
+from api.db.services.llm_service import LLMBundle, LLMType
+from api import settings
 
 # 全局配置初始化(模块加载时执行一次)
 try:
@@ -318,7 +320,7 @@ def get_report(report_id):
     # Get report
     report = OperationalReportService.get_by_id(
         report_id=report_id_int,
-        user_id=user_id
+        user_id=convert_user_id_to_string(user_id)
     )
     
     if report:
@@ -379,7 +381,7 @@ def list_reports():
     # Get reports
     reports, total = OperationalReportService.get_by_kb_id(
         kb_id=get_kb_id(),
-        user_id=user_id,
+        user_id=convert_user_id_to_string(user_id),
         page_number=page,
         items_per_page=page_size,
         orderby=orderby,
@@ -450,18 +452,18 @@ def vector_search_reports():
     page_size = req.get("page_size", 20)
     similarity_threshold = req.get("similarity_threshold", 0.4)
     vector_similarity_weight = req.get("vector_similarity_weight", 0.7)
-    
+
     # Perform vector search
     results = OperationalReportService.vector_search(
         query=req["query"],
         kb_id=get_kb_id(),
-        user_id=req["user_id"],
+        user_id=convert_user_id_to_string(req["user_id"]),
         page_number=page,
         items_per_page=page_size,
         similarity_threshold=similarity_threshold,
         vector_similarity_weight=vector_similarity_weight
     )
-    
+
     # 转换输出数据，将每个报告的created_by转换为整数类型以兼容bigint
     if results.get("reports"):
         for report in results["reports"]:
@@ -533,7 +535,7 @@ def find_similar_reports(report_id):
     # Get the reference report
     report = OperationalReportService.get_by_id(
         report_id=report_id_int,
-        user_id=user_id
+        user_id=convert_user_id_to_string(user_id)
     )
     
     if not report:
@@ -546,7 +548,7 @@ def find_similar_reports(report_id):
     results = OperationalReportService.vector_search(
         query=query,
         kb_id=get_kb_id(),
-        user_id=user_id,
+        user_id=convert_user_id_to_string(user_id),
         page_number=1,
         items_per_page=limit + 1,  # +1 to exclude the original report
         similarity_threshold=similarity_threshold,

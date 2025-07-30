@@ -669,3 +669,6 @@ class Dealer:
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}
+
+# 定义模块的公共接口
+__all__ = ['index_name', 'Dealer']

@@ -18,17 +18,16 @@ import logging
 import xxhash
 from datetime import datetime
 from functools import lru_cache
-from peewee import fn
 
 from api import settings
 from api.db import StatusEnum, LLMType
 from api.db.db_models import OperationalReport
 from api.db.services.common_service import CommonService
-from api.db.services.user_service import UserTenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle, TenantLLMService
-from api.db.db_models import UserTenant, Knowledgebase
-from rag.nlp import rag_tokenizer, search
+from api.db.services.llm_service import LLMBundle
+from api.db.db_models import Knowledgebase
+from rag.nlp import rag_tokenizer
+from rag.nlp.search import index_name
 
 
 class OperationalReportService(CommonService):
@@ -137,12 +136,12 @@ class OperationalReportService(CommonService):
                     
                     # Create index if not exists
                     logging.info("check index exist")
-                    index_name = search.index_name(kb_info.tenant_id)
-                    if not settings.docStoreConn.indexExist(index_name, kb_info.id):
-                        logging.info(f"Creating index {index_name} for kb {kb_info.id}")
-                        settings.docStoreConn.createIdx(index_name, kb_info.id, len(vector))
+                    idx_name = index_name(kb_info.tenant_id)
+                    if not settings.docStoreConn.indexExist(idx_name, kb_info.id):
+                        logging.info(f"Creating index {idx_name} for kb {kb_info.id}")
+                        settings.docStoreConn.createIdx(idx_name, kb_info.id, len(vector))
                     # Insert into vector store
-                    settings.docStoreConn.insert([chunk], index_name, kb_info.id)
+                    settings.docStoreConn.insert([chunk], idx_name, kb_info.id)
                     
                     logging.info(f"Successfully vectorized report {report.id}")
                     return True
@@ -179,10 +178,10 @@ class OperationalReportService(CommonService):
             Boolean indicating success
         """
         try:
-            index_name = search.index_name(kb_info.tenant_id)
+            idx_name = index_name(kb_info.tenant_id)
             settings.docStoreConn.delete(
                 {"doc_id": str(report_id)},  # 将整数转换为字符串
-                index_name, 
+                idx_name, 
                 kb_info.id
             )
             logging.info(f"Successfully removed report {report_id} from vector store")
@@ -268,27 +267,57 @@ class OperationalReportService(CommonService):
         kb_info = cls._get_kb_info(kb_id)
         if not kb_info:
             raise ValueError(f"Knowledge base {kb_id} not found")
-        
+
         try:
-            # 执行向量搜索 - 获取更多结果用于后续排序
-            search_results = search(
-                query=query,
-                kb_id=kb_info.id,
-                page_number=1,  # 获取第一页的所有结果
-                items_per_page=1000,  # 获取更多结果用于排序
-                similarity_threshold=similarity_threshold,
-                vector_similarity_weight=vector_similarity_weight
-            )
+            # 获取embedding模型
+            from api.db.services.llm_service import LLMBundle, LLMType
             
-            if not search_results:
+            # 使用with语句管理embedding模型
+            with LLMBundle(kb_info.tenant_id, LLMType.EMBEDDING.value, llm_name=kb_info.embd_id) as embd_mdl:
+                # 使用底层的search方法进行向量检索，获取所有候选结果
+                # 构建搜索请求
+                search_req = {
+                    "kb_ids": [kb_info.id],
+                    "page": 1,  # 获取第一页的所有结果
+                    "size": 1000,  # 获取大量结果用于后续排序
+                    "question": query,
+                    "vector": True,
+                    "topk": 1024,  # 获取更多候选结果
+                    "similarity": similarity_threshold,
+                    "available_int": 1
+                }
+                
+                # 执行向量搜索
+                from rag.nlp.search import index_name
+                idx_name = index_name(kb_info.tenant_id)
+                
+                search_results = settings.retrievaler.search(
+                    search_req,
+                    [idx_name],
+                    [kb_info.id],
+                    embd_mdl,
+                    highlight=False
+                )
+
+            if not search_results or search_results.total == 0:
+                logging.warning("No search results returned from vector search")
                 return {"reports": [], "total": 0}
+            
+            # 重新排序搜索结果
+            sim, tsim, vsim = settings.retrievaler.rerank(
+                search_results, 
+                query, 
+                1 - vector_similarity_weight, 
+                vector_similarity_weight
+            )
             
             # 处理搜索结果并应用用户数据过滤
             all_reports = []
-            for result in search_results.get("results", []):
+
+            for i, chunk_id in enumerate(search_results.ids):
                 try:
-                    # 获取报告详情
-                    report_id_str = result.get("doc_id")
+                    chunk = search_results.field[chunk_id]
+                    report_id_str = chunk.get("doc_id")
                     if report_id_str:
                         # 将字符串doc_id转换为整数
                         try:
@@ -301,31 +330,47 @@ class OperationalReportService(CommonService):
                         if report and report.status == StatusEnum.VALID.value:
                             # 应用用户数据过滤
                             if user_id:
+                                # 用户可以看到自己的报告和其他人的已生效报告
                                 if report.created_by != user_id and report.report_status != "已生效":
                                     continue
                             
                             report_dict = report.to_dict()
-                            report_dict["similarity"] = result.get("similarity", 0)
+                            report_dict["similarity"] = sim[i] if i < len(sim) else 0
                             all_reports.append({
                                 "report": report_dict,
-                                "similarity": result.get("similarity", 0),
+                                "similarity": sim[i] if i < len(sim) else 0,
                                 "is_own_report": report.created_by == user_id,
                                 "create_time": report.create_time
                             })
+                        else:
+                            logging.warning(f"Report {report_id} not found or invalid status: {report.status if report else 'None'}")
+                    else:
+                        logging.warning(f"Chunk {i+1} has no doc_id")
                 except Exception as e:
-                    logging.warning(f"Error processing search result: {e}")
+                    logging.warning(f"Error processing search result {i+1}: {e}")
                     continue
-            
+
             # 自定义排序逻辑
             def custom_sort_key(item):
                 report = item["report"]
                 is_own = item["is_own_report"]
                 create_time = item["create_time"]
                 
+                # 处理create_time，可能是整数时间戳或datetime对象
+                if isinstance(create_time, int):
+                    # 如果是整数时间戳，直接使用
+                    timestamp = create_time
+                elif hasattr(create_time, 'timestamp'):
+                    # 如果是datetime对象，转换为时间戳
+                    timestamp = create_time.timestamp()
+                else:
+                    # 其他情况，使用0作为默认值
+                    timestamp = 0
+                
                 # 排序优先级：
                 # 1. 是否为自己的报告 (True > False)
                 # 2. 创建时间 (降序)
-                return (not is_own, -create_time.timestamp())
+                return (not is_own, -timestamp)
             
             # 应用排序
             all_reports.sort(key=custom_sort_key)
@@ -340,7 +385,7 @@ class OperationalReportService(CommonService):
             for item in paginated_reports:
                 item.pop("is_own_report", None)
                 item.pop("create_time", None)
-            
+
             return {
                 "reports": paginated_reports,
                 "total": total
