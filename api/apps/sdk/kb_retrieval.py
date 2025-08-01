@@ -78,6 +78,11 @@ def chunks_retrieval():
     embedding_model_name = CONFIG['embedding_model']
     kb_ids = CONFIG['kb_ids']
     
+    # 获取tenant的rerank_id
+    from api.db.db_models import Tenant
+    tenant = Tenant.get_by_id(tenant_id)
+    rerank_id = tenant.rerank_id if tenant else ""
+    
     # 使用with语句自动管理LLMBundle资源
     with LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_model_name) as embed_mdl:
         # 初始化langfuse trace
@@ -106,6 +111,16 @@ def chunks_retrieval():
         except Exception as e:
             logging.warning(f"Failed to create main trace: {e}")
 
+        # 构造rerank_model（如果tenant配置了rerank_id）
+        rerank_mdl = None
+        if rerank_id:
+            try:
+                rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
+            except Exception as e:
+                logging.warning(f"Failed to create rerank model with rerank_id {rerank_id}: {e}")
+                rerank_mdl = None
+        
+        logging.info(f"rerank_mdl: {rerank_mdl}")
         chunks_res = settings.retrievaler.retrieval(
             query,
             embed_mdl,
@@ -116,6 +131,7 @@ def chunks_retrieval():
             similarity_threshold,
             vector_similarity_weight,
             1024,
+            rerank_mdl=rerank_mdl,
             main_trace=main_trace
         )
 
@@ -259,6 +275,11 @@ def multiturn_chunks_retrieval():
     kb_ids = CONFIG['kb_ids']
     assert history[-1]["role"] == "user", "The last content of this conversation is not from user."
     
+    # 获取tenant的rerank_id
+    from api.db.db_models import Tenant
+    tenant = Tenant.get_by_id(tenant_id)
+    rerank_id = tenant.rerank_id if tenant else ""
+    
     # 使用with语句自动管理LLMBundle资源
     with LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_model_name) as embed_mdl, \
          LLMBundle(tenant_id, LLMType.CHAT) as chat_mdl:
@@ -361,6 +382,15 @@ def multiturn_chunks_retrieval():
             except Exception as e:
                 logging.warning(f"Failed to update trace with refined question: {e}")
 
+        # 构造rerank_model（如果tenant配置了rerank_id）
+        rerank_mdl = None
+        if rerank_id:
+            try:
+                rerank_mdl = LLMBundle(tenant_id, LLMType.RERANK, rerank_id)
+            except Exception as e:
+                logging.warning(f"Failed to create rerank model with rerank_id {rerank_id}: {e}")
+                rerank_mdl = None
+        
         chunks_res = settings.retrievaler.retrieval(
             refined_question,
             embed_mdl,
@@ -371,6 +401,7 @@ def multiturn_chunks_retrieval():
             similarity_threshold,
             vector_similarity_weight,
             1024,
+            rerank_mdl=rerank_mdl,
             main_trace=main_trace
         )
 

@@ -470,12 +470,15 @@ class Dealer:
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
 
-        tksim = self.qryr.token_similarity(keywords, ins_tw)
+        # 使用rerank_model进行重排序，只使用rerank_model的分数
         vtsim, _ = rerank_mdl.similarity(query, [rmSpace(" ".join(tks)) for tks in ins_tw])
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
-        final_sim = tkweight * (np.array(tksim)+rank_fea) + vtweight * vtsim
+        # 只使用rerank_model的分数，权重为100%
+        final_sim = vtsim + rank_fea
+        # 为了兼容性，返回空的tksim
+        tksim = np.zeros(len(vtsim))
 
         return final_sim, tksim, vtsim
 
